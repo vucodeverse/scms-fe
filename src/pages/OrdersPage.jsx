@@ -9,7 +9,7 @@ import StatusTag from "../components/StatusTag.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu } from "../config/menu.js";
+import { buildMenu, POS_MENU } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 
@@ -39,7 +39,7 @@ export default function OrdersPage() {
   const { navigate } = useRouter();
   const { user } = useAuth();
   const toast = useToast();
-  const menu = buildMenu(user);
+  const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
 

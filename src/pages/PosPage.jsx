@@ -11,7 +11,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu } from "../config/menu.js";
+import { POS_MENU } from "../config/menu.js";
 import { formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
@@ -32,7 +32,8 @@ export default function PosPage() {
   const { user, login } = useAuth();
   const { navigate } = useRouter();
   const toast = useToast();
-  const menu = buildMenu(user);
+  // Màn POS chỉ hiển thị các chức năng của quầy POS (Gọi món, Đơn quầy, Chấm công)
+  const menu = POS_MENU;
   const toastRef = useRef(toast);
   toastRef.current = toast;
 

@@ -45,6 +45,15 @@ export default function SessionHeaderRight() {
       >
         {initialsOf(user?.fullName)}
       </span>
+      {user && (user.role === "COO" || user.role === "BRANCH_MANAGER") ? (
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={() => navigate(user.role === "COO" ? "/chain/overview" : "/branch/overview")}
+        >
+          Trang quản trị
+        </Button>
+      ) : null}
       {user ? (
         <Button
           variant="outline-secondary"
