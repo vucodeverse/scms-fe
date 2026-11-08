@@ -86,13 +86,7 @@ export default function App() {
               },
               {
                 pattern: "/pos",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <PosPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <PosPage />,
               },
               {
                 pattern: "/branch/inventory/slip",

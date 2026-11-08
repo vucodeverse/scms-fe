@@ -213,14 +213,24 @@ export default function KioskPage() {
             <span className="brand__mark">SC</span>
             <span>SCMS · Kiosk</span>
           </div>
-          <Button
-            size="sm"
-            variant="outline-light"
-            onClick={() => navigate("/login")}
-            style={{ background: "transparent" }}
-          >
-            Đăng nhập
-          </Button>
+          <div className="d-flex align-items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline-light"
+              onClick={() => navigate("/pos")}
+              style={{ background: "transparent" }}
+            >
+              Quầy bán hàng (POS)
+            </Button>
+            <Button
+              size="sm"
+              variant="outline-light"
+              onClick={() => navigate("/login")}
+              style={{ background: "transparent" }}
+            >
+              Đăng nhập
+            </Button>
+          </div>
         </div>
 
         <div className="kiosk-clock-wrap">
