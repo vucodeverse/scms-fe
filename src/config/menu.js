@@ -30,8 +30,9 @@ export const APP_MENU = [
 ];
 
 // Lọc menu theo permissions và roles của người dùng hiện tại; nhóm rỗng bị loại.
+// Khi chưa đăng nhập (ở quầy POS tự động / public): vẫn hiển thị đầy đủ menu hệ thống.
 export function buildMenu(user) {
-  if (!user) return [];
+  if (!user) return APP_MENU;
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   return APP_MENU.map((section) => ({
     ...section,

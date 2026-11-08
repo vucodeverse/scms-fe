@@ -266,10 +266,10 @@ export default function PosPage() {
   return (
     <AdminLayout
       menu={menu}
-      branchName={user?.branchName || undefined}
+      branchName={user?.branchName || branches.find((b) => b.id === branchId)?.name || undefined}
       headerRight={<SessionHeaderRight />}
-      userName={user?.fullName}
-      userRole={roleLabel(user?.role)}
+      userName={user?.fullName || "Quầy thu ngân"}
+      userRole={roleLabel(user?.role) || "POS tại quầy"}
     >
       <PageHeader
         title="Bán hàng tại quầy"
