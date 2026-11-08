@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Form, Spinner, Tab, Tabs, Badge } from "react-bootstrap";
+import { Button, Form, Spinner, Badge } from "react-bootstrap";
 import TaskLayout from "../../layouts/TaskLayout.jsx";
 import StatusTag from "../../components/StatusTag.jsx";
 import { useToast } from "../../components/ToastContext.jsx";
@@ -25,6 +25,18 @@ const BRANCH_STATUS_VARIANTS = {
   INACTIVE: "neutral",
 };
 
+const PRODUCT_STATUS_LABELS = {
+  AVAILABLE: "Đang bán",
+  UNAVAILABLE: "Tạm hết",
+  INACTIVE: "Ngừng bán",
+};
+
+const PRODUCT_STATUS_VARIANTS = {
+  AVAILABLE: "dark",
+  UNAVAILABLE: "warn",
+  INACTIVE: "neutral",
+};
+
 const VOUCHER_STATUS_LABELS = {
   ACTIVE: "Đang áp dụng",
   INACTIVE: "Ngừng áp dụng",
@@ -38,7 +50,8 @@ const VOUCHER_STATUS_VARIANTS = {
 };
 
 // UC14 — Đồng bộ cấu hình chuỗi xuống chi nhánh mục tiêu.
-// Cho phép COO chọn chi nhánh và chọn chính xác từng Danh mục, Món ăn, Voucher muốn phát hành.
+// Cho phép Giám đốc vận hành (COO) chọn chi nhánh nhận đồng bộ và
+// chọn chi tiết từng Danh mục, Món ăn kèm Bảng giá và Voucher muốn phát hành.
 export default function ChainSyncPage() {
   const { navigate } = useRouter();
   const toast = useToast();
@@ -48,30 +61,30 @@ export default function ChainSyncPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // 1. Dữ liệu & lựa chọn Chi nhánh
+  // 1. Dữ liệu Chi nhánh
   const [branches, setBranches] = useState([]);
   const [targetBranchIds, setTargetBranchIds] = useState([]);
   const [branchKeyword, setBranchKeyword] = useState("");
 
-  // 2. Dữ liệu & lựa chọn Danh mục
+  // 2. Dữ liệu Danh mục
   const [categories, setCategories] = useState([]);
   const [syncCategories, setSyncCategories] = useState(true);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState([]);
 
-  // 3. Dữ liệu & lựa chọn Sản phẩm / Món ăn
+  // 3. Dữ liệu Món ăn & Bảng giá
   const [products, setProducts] = useState([]);
   const [syncProducts, setSyncProducts] = useState(true);
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [productKeyword, setProductKeyword] = useState("");
   const [productCatFilter, setProductCatFilter] = useState("");
 
-  // 4. Dữ liệu & lựa chọn Voucher
+  // 4. Dữ liệu Voucher
   const [vouchers, setVouchers] = useState([]);
   const [syncVouchers, setSyncVouchers] = useState(true);
   const [selectedVoucherIds, setSelectedVoucherIds] = useState([]);
   const [voucherKeyword, setVoucherKeyword] = useState("");
 
-  // Tải đồng thời tất cả dữ liệu từ chuỗi
+  // Tải đồng thời tất cả dữ liệu từ hệ thống chuỗi
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
@@ -92,17 +105,17 @@ export default function ChainSyncPage() {
       setProducts(prodItems);
       setVouchers(vItems);
 
-      // Mặc định chọn tất cả chi nhánh đang OPEN
+      // Mặc định chọn tất cả chi nhánh đang mở (OPEN)
       const openBranchIds = brItems.filter((b) => b.status === "OPEN").map((b) => b.id);
       setTargetBranchIds(openBranchIds.length ? openBranchIds : brItems.map((b) => b.id));
 
-      // Mặc định chọn tất cả danh mục active
+      // Mặc định chọn tất cả danh mục
       setSelectedCategoryIds(catItems.map((c) => c.id));
 
-      // Mặc định chọn tất cả món ăn active/available
+      // Mặc định chọn tất cả món ăn
       setSelectedProductIds(prodItems.map((p) => p.id));
 
-      // Mặc định chọn tất cả voucher active
+      // Mặc định chọn tất cả voucher
       setSelectedVoucherIds(vItems.map((v) => v.id));
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được đầy đủ dữ liệu cấu hình chuỗi.");
@@ -202,8 +215,9 @@ export default function ChainSyncPage() {
       if (productKeyword.trim()) {
         const kw = productKeyword.toLowerCase();
         return (
-          p.code?.toLowerCase().includes(kw) ||
-          p.name?.toLowerCase().includes(kw)
+          p.name?.toLowerCase().includes(kw) ||
+          String(p.id).includes(kw) ||
+          p.categoryName?.toLowerCase().includes(kw)
         );
       }
       return true;
@@ -273,6 +287,11 @@ export default function ChainSyncPage() {
       (syncProducts && selectedProductIds.length > 0) ||
       (syncVouchers && (selectedVoucherIds.length > 0 || vouchers.length === 0)));
 
+  function scrollToSection(id) {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <TaskLayout
       title="Đồng bộ chuỗi xuống chi nhánh"
@@ -283,7 +302,7 @@ export default function ChainSyncPage() {
     >
       <div className="notice notice--warn mb-3">
         <span>
-          Lệnh đồng bộ sẽ phát hành các Danh mục, Món ăn và Voucher đã chọn từ trụ sở chuỗi xuống các chi nhánh mục tiêu.
+          Lệnh đồng bộ sẽ phát hành các Danh mục, Món ăn kèm Bảng giá và Voucher đã chọn từ trụ sở chuỗi xuống các chi nhánh mục tiêu.
           Hệ thống sẽ ghi nhận lịch sử kiểm toán vận hành (Audit Log).
         </span>
       </div>
@@ -294,499 +313,518 @@ export default function ChainSyncPage() {
         </div>
       ) : (
         <Form onSubmit={handleSync}>
-          <Tabs defaultActiveKey="branches" className="mb-3">
-            {/* TAB 1: CHI NHÁNH MỤC TIÊU */}
-            <Tab
-              eventKey="branches"
-              title={
-                <span>
-                  1. Chi nhánh mục tiêu{" "}
-                  <Badge bg={targetBranchIds.length > 0 ? "primary" : "secondary"}>
-                    {targetBranchIds.length}/{branches.length}
-                  </Badge>
-                </span>
-              }
+          {/* THANH ĐIỀU HƯỚNG NHANH CÁC PHẦN */}
+          <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
+            <span className="text-muted-scms small me-1">Chuyển nhanh đến:</span>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              type="button"
+              onClick={() => scrollToSection("panel-branches")}
             >
-              <div className="scms-panel panel-pad mb-3">
-                <div className="panel-head">
-                  <div>
-                    <h2>Chọn chi nhánh nhận đồng bộ</h2>
-                    <p>
-                      Đã chọn <strong>{targetBranchIds.length}</strong> / {branches.length} chi nhánh.
-                    </p>
-                  </div>
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllOpenBranches}>
-                      Chỉ chi nhánh đang mở
-                    </Button>
-                    <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllBranches}>
-                      Chọn tất cả
-                    </Button>
-                    <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllBranches}>
-                      Bỏ chọn tất cả
-                    </Button>
-                  </div>
-                </div>
+              1. Chi nhánh ({targetBranchIds.length}/{branches.length})
+            </Button>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              type="button"
+              onClick={() => scrollToSection("panel-categories")}
+            >
+              2. Danh mục ({syncCategories ? selectedCategoryIds.length : 0}/{categories.length})
+            </Button>
+            <Button
+              variant="outline-primary"
+              size="sm"
+              type="button"
+              onClick={() => scrollToSection("panel-products")}
+            >
+              3. Món ăn & Bảng giá ({syncProducts ? selectedProductIds.length : 0}/{products.length})
+            </Button>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              type="button"
+              onClick={() => scrollToSection("panel-vouchers")}
+            >
+              4. Voucher ({syncVouchers ? selectedVoucherIds.length : 0}/{vouchers.length})
+            </Button>
+          </div>
 
-                <div className="mb-3">
-                  <Form.Control
-                    size="sm"
-                    placeholder="Tìm chi nhánh theo mã, tên hoặc địa chỉ…"
-                    value={branchKeyword}
-                    onChange={(e) => setBranchKeyword(e.target.value)}
-                    style={{ maxWidth: 360 }}
-                  />
-                </div>
-
-                {filteredBranches.length === 0 ? (
-                  <div className="text-muted text-center py-4">Không tìm thấy chi nhánh phù hợp.</div>
-                ) : (
-                  <div className="table-responsive" style={{ maxHeight: 420, overflowY: "auto" }}>
-                    <table className="table table-hover align-middle">
-                      <thead className="table-light sticky-top">
-                        <tr>
-                          <th style={{ width: 44 }}></th>
-                          <th style={{ width: 130 }}>Mã CN</th>
-                          <th>Tên chi nhánh</th>
-                          <th>Địa chỉ</th>
-                          <th style={{ width: 140 }}>Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredBranches.map((b) => {
-                          const isChecked = targetBranchIds.includes(b.id);
-                          return (
-                            <tr
-                              key={b.id}
-                              style={{ cursor: "pointer" }}
-                              onClick={() => toggleBranch(b.id)}
-                            >
-                              <td onClick={(e) => e.stopPropagation()}>
-                                <Form.Check
-                                  type="checkbox"
-                                  id={`branch-check-${b.id}`}
-                                  checked={isChecked}
-                                  onChange={() => toggleBranch(b.id)}
-                                />
-                              </td>
-                              <td>
-                                <strong>{b.code}</strong>
-                              </td>
-                              <td>{b.name}</td>
-                              <td className="text-muted-scms">{b.address || "—"}</td>
-                              <td>
-                                <StatusTag
-                                  status={b.status}
-                                  label={BRANCH_STATUS_LABELS[b.status] || b.status}
-                                  variant={BRANCH_STATUS_VARIANTS[b.status]}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+          {/* ========================================================= */}
+          {/* PANEL 1: CHI NHÁNH MỤC TIÊU */}
+          {/* ========================================================= */}
+          <div className="scms-panel panel-pad mb-4" id="panel-branches">
+            <div className="panel-head">
+              <div>
+                <h2>1. Chi nhánh mục tiêu</h2>
+                <p>
+                  Đã chọn <strong>{targetBranchIds.length}</strong> / {branches.length} chi nhánh nhận đồng bộ.
+                </p>
               </div>
-            </Tab>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllOpenBranches}>
+                  Chỉ chi nhánh đang mở
+                </Button>
+                <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllBranches}>
+                  Chọn tất cả ({branches.length})
+                </Button>
+                <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllBranches}>
+                  Bỏ chọn tất cả
+                </Button>
+              </div>
+            </div>
 
-            {/* TAB 2: DANH MỤC MÓN */}
-            <Tab
-              eventKey="categories"
-              title={
-                <span>
-                  2. Danh mục món{" "}
-                  <Badge bg={syncCategories ? (selectedCategoryIds.length > 0 ? "primary" : "warning") : "secondary"}>
-                    {syncCategories ? `${selectedCategoryIds.length}/${categories.length}` : "Tắt"}
-                  </Badge>
-                </span>
-              }
-            >
-              <div className="scms-panel panel-pad mb-3">
-                <div className="panel-head">
-                  <div>
-                    <Form.Check
-                      type="switch"
-                      id="toggle-sync-categories"
-                      checked={syncCategories}
-                      onChange={(e) => setSyncCategories(e.target.checked)}
-                      label={<strong className="fs-6">Đồng bộ danh mục món (Categories)</strong>}
-                    />
-                    <p className="mt-1 mb-0">
-                      Đã chọn <strong>{syncCategories ? selectedCategoryIds.length : 0}</strong> / {categories.length} danh mục.
-                    </p>
-                  </div>
+            <div className="mb-3">
+              <Form.Control
+                size="sm"
+                placeholder="Tìm chi nhánh theo mã, tên hoặc địa chỉ…"
+                value={branchKeyword}
+                onChange={(e) => setBranchKeyword(e.target.value)}
+                style={{ maxWidth: 360 }}
+              />
+            </div>
+
+            {filteredBranches.length === 0 ? (
+              <div className="text-muted text-center py-4">Không tìm thấy chi nhánh phù hợp.</div>
+            ) : (
+              <div className="table-responsive" style={{ maxHeight: 320, overflowY: "auto" }}>
+                <table className="table table-hover align-middle">
+                  <thead className="table-light sticky-top">
+                    <tr>
+                      <th style={{ width: 44 }}></th>
+                      <th style={{ width: 130 }}>Mã CN</th>
+                      <th>Tên chi nhánh</th>
+                      <th>Địa chỉ</th>
+                      <th style={{ width: 140 }}>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredBranches.map((b) => {
+                      const isChecked = targetBranchIds.includes(b.id);
+                      return (
+                        <tr
+                          key={b.id}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => toggleBranch(b.id)}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Form.Check
+                              type="checkbox"
+                              id={`branch-check-${b.id}`}
+                              checked={isChecked}
+                              onChange={() => toggleBranch(b.id)}
+                            />
+                          </td>
+                          <td>
+                            <strong>{b.code}</strong>
+                          </td>
+                          <td>{b.name}</td>
+                          <td className="text-muted-scms">{b.address || "—"}</td>
+                          <td>
+                            <StatusTag
+                              status={b.status}
+                              label={BRANCH_STATUS_LABELS[b.status] || b.status}
+                              variant={BRANCH_STATUS_VARIANTS[b.status]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================= */}
+          {/* PANEL 2: DANH MỤC MÓN */}
+          {/* ========================================================= */}
+          <div className="scms-panel panel-pad mb-4" id="panel-categories">
+            <div className="panel-head">
+              <div>
+                <Form.Check
+                  type="switch"
+                  id="toggle-sync-categories"
+                  checked={syncCategories}
+                  onChange={(e) => setSyncCategories(e.target.checked)}
+                  label={<h2 className="d-inline ms-2">2. Danh mục sản phẩm (Categories)</h2>}
+                />
+                <p className="mt-1 mb-0">
                   {syncCategories ? (
-                    <div className="d-flex align-items-center gap-2">
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllCategories}>
-                        Chọn tất cả ({categories.length})
-                      </Button>
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllCategories}>
-                        Bỏ chọn tất cả
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-
-                {!syncCategories ? (
-                  <div className="text-muted text-center py-4 bg-light rounded">
-                    Chức năng đồng bộ danh mục đang tắt. Hãy bật công tắc phía trên nếu muốn đồng bộ danh mục.
-                  </div>
-                ) : categories.length === 0 ? (
-                  <div className="text-muted text-center py-4">Chưa có danh mục nào trên hệ thống chuỗi.</div>
-                ) : (
-                  <div className="table-responsive" style={{ maxHeight: 420, overflowY: "auto" }}>
-                    <table className="table table-hover align-middle">
-                      <thead className="table-light sticky-top">
-                        <tr>
-                          <th style={{ width: 44 }}></th>
-                          <th style={{ width: 140 }}>Mã danh mục</th>
-                          <th>Tên danh mục</th>
-                          <th style={{ width: 120 }}>Thứ tự</th>
-                          <th style={{ width: 140 }}>Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categories.map((c) => {
-                          const isChecked = selectedCategoryIds.includes(c.id);
-                          return (
-                            <tr
-                              key={c.id}
-                              style={{ cursor: "pointer" }}
-                              onClick={() => toggleCategory(c.id)}
-                            >
-                              <td onClick={(e) => e.stopPropagation()}>
-                                <Form.Check
-                                  type="checkbox"
-                                  id={`cat-check-${c.id}`}
-                                  checked={isChecked}
-                                  onChange={() => toggleCategory(c.id)}
-                                />
-                              </td>
-                              <td>
-                                <strong>{c.code}</strong>
-                              </td>
-                              <td>{c.name}</td>
-                              <td className="text-muted-scms">{c.sortOrder ?? "—"}</td>
-                              <td>
-                                <StatusTag
-                                  status={c.status}
-                                  label={c.status === "ACTIVE" ? "Hoạt động" : "Tạm khóa"}
-                                  variant={c.status === "ACTIVE" ? "dark" : "neutral"}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                    <>Đã chọn <strong>{selectedCategoryIds.length}</strong> / {categories.length} danh mục.</>
+                  ) : (
+                    <span className="text-muted">Đang tắt đồng bộ danh mục.</span>
+                  )}
+                </p>
               </div>
-            </Tab>
+              {syncCategories ? (
+                <div className="d-flex align-items-center gap-2">
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllCategories}>
+                    Chọn tất cả ({categories.length})
+                  </Button>
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllCategories}>
+                    Bỏ chọn tất cả
+                  </Button>
+                </div>
+              ) : null}
+            </div>
 
-            {/* TAB 3: MÓN ĂN & BẢNG GIÁ */}
-            <Tab
-              eventKey="products"
-              title={
-                <span>
-                  3. Món ăn & Bảng giá{" "}
-                  <Badge bg={syncProducts ? (selectedProductIds.length > 0 ? "primary" : "warning") : "secondary"}>
-                    {syncProducts ? `${selectedProductIds.length}/${products.length}` : "Tắt"}
-                  </Badge>
-                </span>
-              }
-            >
-              <div className="scms-panel panel-pad mb-3">
-                <div className="panel-head">
-                  <div>
-                    <Form.Check
-                      type="switch"
-                      id="toggle-sync-products"
-                      checked={syncProducts}
-                      onChange={(e) => setSyncProducts(e.target.checked)}
-                      label={<strong className="fs-6">Đồng bộ món ăn & bảng giá theo size (Products & BOM)</strong>}
-                    />
-                    <p className="mt-1 mb-0">
-                      Đã chọn <strong>{syncProducts ? selectedProductIds.length : 0}</strong> / {products.length} món ăn.
-                    </p>
-                  </div>
+            {!syncCategories ? (
+              <div className="text-muted text-center py-3 bg-light rounded">
+                Chức năng đồng bộ danh mục đang tắt. Bật công tắc phía trên nếu muốn đồng bộ danh mục.
+              </div>
+            ) : categories.length === 0 ? (
+              <div className="text-muted text-center py-4">Chưa có danh mục nào trên hệ thống chuỗi.</div>
+            ) : (
+              <div className="table-responsive" style={{ maxHeight: 320, overflowY: "auto" }}>
+                <table className="table table-hover align-middle">
+                  <thead className="table-light sticky-top">
+                    <tr>
+                      <th style={{ width: 44 }}></th>
+                      <th style={{ width: 140 }}>Mã danh mục</th>
+                      <th>Tên danh mục</th>
+                      <th style={{ width: 120 }}>Thứ tự</th>
+                      <th style={{ width: 140 }}>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.map((c) => {
+                      const isChecked = selectedCategoryIds.includes(c.id);
+                      return (
+                        <tr
+                          key={c.id}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => toggleCategory(c.id)}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Form.Check
+                              type="checkbox"
+                              id={`cat-check-${c.id}`}
+                              checked={isChecked}
+                              onChange={() => toggleCategory(c.id)}
+                            />
+                          </td>
+                          <td>
+                            <strong>{c.code}</strong>
+                          </td>
+                          <td>{c.name}</td>
+                          <td className="text-muted-scms">{c.sortOrder ?? "—"}</td>
+                          <td>
+                            <StatusTag
+                              status={c.status}
+                              label={c.status === "ACTIVE" ? "Hoạt động" : "Tạm khóa"}
+                              variant={c.status === "ACTIVE" ? "dark" : "neutral"}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================= */}
+          {/* PANEL 3: MÓN ĂN & BẢNG GIÁ (HIỂN THỊ TRỰC TIẾP TRÊN FORM) */}
+          {/* ========================================================= */}
+          <div className="scms-panel panel-pad mb-4 border-primary border-opacity-25" id="panel-products">
+            <div className="panel-head">
+              <div>
+                <Form.Check
+                  type="switch"
+                  id="toggle-sync-products"
+                  checked={syncProducts}
+                  onChange={(e) => setSyncProducts(e.target.checked)}
+                  label={<h2 className="d-inline ms-2 text-primary">3. Món ăn & Bảng giá theo size (Products & BOM)</h2>}
+                />
+                <p className="mt-1 mb-0">
                   {syncProducts ? (
-                    <div className="d-flex align-items-center gap-2 flex-wrap">
-                      <Button
-                        variant="outline-secondary"
-                        size="sm"
-                        type="button"
-                        onClick={() => selectAllFilteredProducts(filteredProducts)}
-                      >
-                        Chọn món đang lọc ({filteredProducts.length})
-                      </Button>
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllProducts}>
-                        Chọn toàn bộ ({products.length})
-                      </Button>
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllProducts}>
-                        Bỏ chọn tất cả
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-
-                {syncProducts ? (
-                  <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
-                    <Form.Control
-                      size="sm"
-                      placeholder="Tìm theo mã hoặc tên món…"
-                      value={productKeyword}
-                      onChange={(e) => setProductKeyword(e.target.value)}
-                      style={{ maxWidth: 260 }}
-                    />
-                    <Form.Select
-                      size="sm"
-                      value={productCatFilter}
-                      onChange={(e) => setProductCatFilter(e.target.value)}
-                      style={{ maxWidth: 200 }}
-                    >
-                      <option value="">Tất cả danh mục</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  </div>
-                ) : null}
-
-                {!syncProducts ? (
-                  <div className="text-muted text-center py-4 bg-light rounded">
-                    Chức năng đồng bộ món ăn đang tắt. Hãy bật công tắc phía trên nếu muốn đồng bộ món ăn.
-                  </div>
-                ) : filteredProducts.length === 0 ? (
-                  <div className="text-muted text-center py-4">Không tìm thấy món ăn nào khớp bộ lọc.</div>
-                ) : (
-                  <div className="table-responsive" style={{ maxHeight: 420, overflowY: "auto" }}>
-                    <table className="table table-hover align-middle">
-                      <thead className="table-light sticky-top">
-                        <tr>
-                          <th style={{ width: 44 }}></th>
-                          <th style={{ width: 120 }}>Mã món</th>
-                          <th>Tên món</th>
-                          <th style={{ width: 160 }}>Danh mục</th>
-                          <th style={{ width: 160 }}>Size mặc định & Giá</th>
-                          <th style={{ width: 130 }}>Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredProducts.map((p) => {
-                          const isChecked = selectedProductIds.includes(p.id);
-                          return (
-                            <tr
-                              key={p.id}
-                              style={{ cursor: "pointer" }}
-                              onClick={() => toggleProduct(p.id)}
-                            >
-                              <td onClick={(e) => e.stopPropagation()}>
-                                <Form.Check
-                                  type="checkbox"
-                                  id={`prod-check-${p.id}`}
-                                  checked={isChecked}
-                                  onChange={() => toggleProduct(p.id)}
-                                />
-                              </td>
-                              <td>
-                                <strong>{p.code}</strong>
-                              </td>
-                              <td>
-                                <div className="fw-semibold">{p.name}</div>
-                                {p.description ? (
-                                  <div className="small text-muted text-truncate" style={{ maxWidth: 280 }}>
-                                    {p.description}
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td>
-                                <span className="badge bg-light text-dark border">
-                                  {p.categoryName || categoryMap[p.categoryId] || "Chưa phân loại"}
-                                </span>
-                              </td>
-                              <td>
-                                {p.sizes && p.sizes.length > 0 ? (
-                                  <div>
-                                    {p.sizes.map((s) => (
-                                      <span key={s.size} className="me-2 small">
-                                        <b>{s.size}</b>: {formatVnd(s.price)}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-scms">—</span>
-                                )}
-                              </td>
-                              <td>
-                                <StatusTag
-                                  status={p.status}
-                                  label={p.status === "ACTIVE" || p.status === "AVAILABLE" ? "Đang bán" : "Ngừng bán"}
-                                  variant={p.status === "ACTIVE" || p.status === "AVAILABLE" ? "dark" : "neutral"}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                    <>
+                      Đã chọn <strong>{selectedProductIds.length}</strong> / {products.length} món ăn kèm bảng giá chi tiết.
+                    </>
+                  ) : (
+                    <span className="text-muted">Đang tắt đồng bộ món ăn.</span>
+                  )}
+                </p>
               </div>
-            </Tab>
-
-            {/* TAB 4: CHƯƠNG TRÌNH KHUYẾN MÃI & VOUCHER */}
-            <Tab
-              eventKey="vouchers"
-              title={
-                <span>
-                  4. Voucher{" "}
-                  <Badge bg={syncVouchers ? (selectedVoucherIds.length > 0 ? "primary" : "warning") : "secondary"}>
-                    {syncVouchers ? `${selectedVoucherIds.length}/${vouchers.length}` : "Tắt"}
-                  </Badge>
-                </span>
-              }
-            >
-              <div className="scms-panel panel-pad mb-3">
-                <div className="panel-head">
-                  <div>
-                    <Form.Check
-                      type="switch"
-                      id="toggle-sync-vouchers"
-                      checked={syncVouchers}
-                      onChange={(e) => setSyncVouchers(e.target.checked)}
-                      label={<strong className="fs-6">Đồng bộ chương trình khuyến mãi & Voucher</strong>}
-                    />
-                    <p className="mt-1 mb-0">
-                      Đã chọn <strong>{syncVouchers ? selectedVoucherIds.length : 0}</strong> / {vouchers.length} voucher.
-                    </p>
-                  </div>
-                  {syncVouchers && vouchers.length > 0 ? (
-                    <div className="d-flex align-items-center gap-2">
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllVouchers}>
-                        Chọn tất cả ({vouchers.length})
-                      </Button>
-                      <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllVouchers}>
-                        Bỏ chọn tất cả
-                      </Button>
-                    </div>
-                  ) : null}
+              {syncProducts ? (
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    type="button"
+                    onClick={() => selectAllFilteredProducts(filteredProducts)}
+                  >
+                    Chọn món đang lọc ({filteredProducts.length})
+                  </Button>
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllProducts}>
+                    Chọn toàn bộ ({products.length})
+                  </Button>
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllProducts}>
+                    Bỏ chọn tất cả
+                  </Button>
                 </div>
+              ) : null}
+            </div>
 
-                {syncVouchers && vouchers.length > 0 ? (
-                  <div className="mb-3">
-                    <Form.Control
-                      size="sm"
-                      placeholder="Tìm voucher theo mã…"
-                      value={voucherKeyword}
-                      onChange={(e) => setVoucherKeyword(e.target.value)}
-                      style={{ maxWidth: 260 }}
-                    />
-                  </div>
-                ) : null}
-
-                {!syncVouchers ? (
-                  <div className="text-muted text-center py-4 bg-light rounded">
-                    Chức năng đồng bộ voucher đang tắt. Hãy bật công tắc phía trên nếu muốn đồng bộ voucher.
-                  </div>
-                ) : vouchers.length === 0 ? (
-                  <div className="text-muted text-center py-4">Chưa có mã voucher nào trên hệ thống chuỗi.</div>
-                ) : filteredVouchers.length === 0 ? (
-                  <div className="text-muted text-center py-4">Không tìm thấy voucher phù hợp.</div>
-                ) : (
-                  <div className="table-responsive" style={{ maxHeight: 420, overflowY: "auto" }}>
-                    <table className="table table-hover align-middle">
-                      <thead className="table-light sticky-top">
-                        <tr>
-                          <th style={{ width: 44 }}></th>
-                          <th style={{ width: 140 }}>Mã voucher</th>
-                          <th>Loại & Mức giảm</th>
-                          <th>Đơn tối thiểu</th>
-                          <th>Thời gian áp dụng</th>
-                          <th style={{ width: 130 }}>Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredVouchers.map((v) => {
-                          const isChecked = selectedVoucherIds.includes(v.id);
-                          return (
-                            <tr
-                              key={v.id}
-                              style={{ cursor: "pointer" }}
-                              onClick={() => toggleVoucher(v.id)}
-                            >
-                              <td onClick={(e) => e.stopPropagation()}>
-                                <Form.Check
-                                  type="checkbox"
-                                  id={`voucher-check-${v.id}`}
-                                  checked={isChecked}
-                                  onChange={() => toggleVoucher(v.id)}
-                                />
-                              </td>
-                              <td>
-                                <strong className="text-primary font-monospace">{v.code}</strong>
-                              </td>
-                              <td>
-                                {v.discountType === "PERCENT"
-                                  ? `Giảm ${v.discountValue}%`
-                                  : `Giảm ${formatVnd(v.discountValue)}`}
-                              </td>
-                              <td>{v.minOrderAmount ? formatVnd(v.minOrderAmount) : "Không yêu cầu"}</td>
-                              <td className="small text-muted-scms">
-                                {v.startDate ? formatDateTime(v.startDate) : "Ngay"} →{" "}
-                                {v.endDate ? formatDateTime(v.endDate) : "Vô thời hạn"}
-                              </td>
-                              <td>
-                                <StatusTag
-                                  status={v.status}
-                                  label={VOUCHER_STATUS_LABELS[v.status] || v.status}
-                                  variant={VOUCHER_STATUS_VARIANTS[v.status]}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+            {syncProducts ? (
+              <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
+                <Form.Control
+                  size="sm"
+                  placeholder="Tìm theo tên món hoặc mã món…"
+                  value={productKeyword}
+                  onChange={(e) => setProductKeyword(e.target.value)}
+                  style={{ maxWidth: 260 }}
+                />
+                <Form.Select
+                  size="sm"
+                  value={productCatFilter}
+                  onChange={(e) => setProductCatFilter(e.target.value)}
+                  style={{ maxWidth: 200 }}
+                >
+                  <option value="">Tất cả danh mục ({categories.length})</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Form.Select>
               </div>
-            </Tab>
-          </Tabs>
+            ) : null}
 
-          {/* TỔNG KẾT VÀ NÚT THAO TÁC */}
-          <div className="scms-panel panel-pad mt-3">
+            {!syncProducts ? (
+              <div className="text-muted text-center py-3 bg-light rounded">
+                Chức năng đồng bộ món ăn đang tắt. Bật công tắc phía trên nếu muốn phát hành món ăn & bảng giá.
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="text-muted text-center py-4">Không tìm thấy món ăn nào khớp bộ lọc.</div>
+            ) : (
+              <div className="table-responsive" style={{ maxHeight: 420, overflowY: "auto" }}>
+                <table className="table table-hover align-middle">
+                  <thead className="table-light sticky-top">
+                    <tr>
+                      <th style={{ width: 44 }}></th>
+                      <th style={{ width: 80 }}>Mã #</th>
+                      <th style={{ minWidth: 200 }}>Tên món ăn</th>
+                      <th style={{ width: 150 }}>Danh mục</th>
+                      <th style={{ minWidth: 240 }}>Bảng giá theo Size (S, M, L)</th>
+                      <th style={{ minWidth: 160 }}>Topping đi kèm</th>
+                      <th style={{ width: 120 }}>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map((p) => {
+                      const isChecked = selectedProductIds.includes(p.id);
+                      return (
+                        <tr
+                          key={p.id}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => toggleProduct(p.id)}
+                          className={isChecked ? "table-active" : ""}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Form.Check
+                              type="checkbox"
+                              id={`prod-check-${p.id}`}
+                              checked={isChecked}
+                              onChange={() => toggleProduct(p.id)}
+                            />
+                          </td>
+                          <td>
+                            <strong className="text-muted font-monospace">#{p.id}</strong>
+                          </td>
+                          <td>
+                            <div className="fw-bold text-dark">{p.name}</div>
+                            {p.description ? (
+                              <div className="small text-muted text-truncate" style={{ maxWidth: 300 }}>
+                                {p.description}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td>
+                            <span className="badge bg-light text-dark border">
+                              {p.categoryName || categoryMap[p.categoryId] || "Chưa phân loại"}
+                            </span>
+                          </td>
+                          <td>
+                            {p.sizes && p.sizes.length > 0 ? (
+                              <div className="d-flex flex-wrap gap-2">
+                                {p.sizes.map((s) => (
+                                  <span
+                                    key={s.id || s.size}
+                                    className={`badge ${
+                                      s.size === p.defaultSize
+                                        ? "bg-primary text-white"
+                                        : "bg-light text-dark border"
+                                    }`}
+                                    title={s.size === p.defaultSize ? "Size mặc định" : ""}
+                                  >
+                                    <strong>{s.size}</strong>: {formatVnd(s.price)}
+                                    {s.size === p.defaultSize ? " ★" : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-scms small">Chưa cấu hình giá</span>
+                            )}
+                          </td>
+                          <td>
+                            {p.toppings && p.toppings.length > 0 ? (
+                              <div className="small text-muted-scms">
+                                {p.toppings.map((t) => t.name).join(", ")}
+                              </div>
+                            ) : (
+                              <span className="text-muted-scms small">—</span>
+                            )}
+                          </td>
+                          <td>
+                            <StatusTag
+                              status={p.status}
+                              label={PRODUCT_STATUS_LABELS[p.status] || p.status}
+                              variant={PRODUCT_STATUS_VARIANTS[p.status] || "neutral"}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================= */}
+          {/* PANEL 4: CHƯƠNG TRÌNH KHUYẾN MÃI & VOUCHER */}
+          {/* ========================================================= */}
+          <div className="scms-panel panel-pad mb-4" id="panel-vouchers">
+            <div className="panel-head">
+              <div>
+                <Form.Check
+                  type="switch"
+                  id="toggle-sync-vouchers"
+                  checked={syncVouchers}
+                  onChange={(e) => setSyncVouchers(e.target.checked)}
+                  label={<h2 className="d-inline ms-2">4. Chương trình khuyến mãi & Voucher</h2>}
+                />
+                <p className="mt-1 mb-0">
+                  {syncVouchers ? (
+                    <>Đã chọn <strong>{selectedVoucherIds.length}</strong> / {vouchers.length} voucher.</>
+                  ) : (
+                    <span className="text-muted">Đang tắt đồng bộ voucher.</span>
+                  )}
+                </p>
+              </div>
+              {syncVouchers && vouchers.length > 0 ? (
+                <div className="d-flex align-items-center gap-2">
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={selectAllVouchers}>
+                    Chọn tất cả ({vouchers.length})
+                  </Button>
+                  <Button variant="outline-secondary" size="sm" type="button" onClick={deselectAllVouchers}>
+                    Bỏ chọn tất cả
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            {syncVouchers && vouchers.length > 0 ? (
+              <div className="mb-3">
+                <Form.Control
+                  size="sm"
+                  placeholder="Tìm voucher theo mã…"
+                  value={voucherKeyword}
+                  onChange={(e) => setVoucherKeyword(e.target.value)}
+                  style={{ maxWidth: 260 }}
+                />
+              </div>
+            ) : null}
+
+            {!syncVouchers ? (
+              <div className="text-muted text-center py-3 bg-light rounded">
+                Chức năng đồng bộ voucher đang tắt. Bật công tắc phía trên nếu muốn đồng bộ voucher.
+              </div>
+            ) : vouchers.length === 0 ? (
+              <div className="text-muted text-center py-4">Chưa có mã voucher nào trên hệ thống chuỗi.</div>
+            ) : filteredVouchers.length === 0 ? (
+              <div className="text-muted text-center py-4">Không tìm thấy voucher phù hợp.</div>
+            ) : (
+              <div className="table-responsive" style={{ maxHeight: 320, overflowY: "auto" }}>
+                <table className="table table-hover align-middle">
+                  <thead className="table-light sticky-top">
+                    <tr>
+                      <th style={{ width: 44 }}></th>
+                      <th style={{ width: 140 }}>Mã voucher</th>
+                      <th>Loại & Mức giảm</th>
+                      <th>Đơn tối thiểu</th>
+                      <th>Thời gian áp dụng</th>
+                      <th style={{ width: 130 }}>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredVouchers.map((v) => {
+                      const isChecked = selectedVoucherIds.includes(v.id);
+                      return (
+                        <tr
+                          key={v.id}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => toggleVoucher(v.id)}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <Form.Check
+                              type="checkbox"
+                              id={`voucher-check-${v.id}`}
+                              checked={isChecked}
+                              onChange={() => toggleVoucher(v.id)}
+                            />
+                          </td>
+                          <td>
+                            <strong className="text-primary font-monospace">{v.code}</strong>
+                          </td>
+                          <td>
+                            {v.discountType === "PERCENT"
+                              ? `Giảm ${v.discountValue}%`
+                              : `Giảm ${formatVnd(v.discountValue)}`}
+                          </td>
+                          <td>{v.minOrderAmount ? formatVnd(v.minOrderAmount) : "Không yêu cầu"}</td>
+                          <td className="small text-muted-scms">
+                            {v.startDate ? formatDateTime(v.startDate) : "Ngay"} →{" "}
+                            {v.endDate ? formatDateTime(v.endDate) : "Vô thời hạn"}
+                          </td>
+                          <td>
+                            <StatusTag
+                              status={v.status}
+                              label={VOUCHER_STATUS_LABELS[v.status] || v.status}
+                              variant={VOUCHER_STATUS_VARIANTS[v.status]}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================= */}
+          {/* PANEL 5: TỔNG KẾT VÀ NÚT PHÁT LỆNH ĐỒNG BỘ */}
+          {/* ========================================================= */}
+          <div className="scms-panel panel-pad mt-4 shadow-sm border">
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
               <div>
-                <h6 className="mb-1 text-muted-scms">TỔNG KẾT PHÁT HÀNH ĐỒNG BỘ</h6>
+                <h6 className="mb-2 text-muted-scms font-monospace">TỔNG KẾT NỘI DUNG ĐỒNG BỘ</h6>
                 <div className="d-flex gap-3 align-items-center flex-wrap">
-                  <span>
+                  <span className="badge bg-secondary p-2">
                     Chi nhánh: <strong>{targetBranchIds.length}</strong>
                   </span>
-                  <span>•</span>
-                  <span>
-                    Danh mục:{" "}
-                    <strong>
-                      {syncCategories ? `${selectedCategoryIds.length} danh mục` : "Không đồng bộ"}
-                    </strong>
+                  <span className="badge bg-light text-dark border p-2">
+                    Danh mục: <strong>{syncCategories ? `${selectedCategoryIds.length}` : "Tắt"}</strong>
                   </span>
-                  <span>•</span>
-                  <span>
-                    Món ăn:{" "}
-                    <strong>
-                      {syncProducts ? `${selectedProductIds.length} món` : "Không đồng bộ"}
-                    </strong>
+                  <span className="badge bg-primary p-2">
+                    Món ăn: <strong>{syncProducts ? `${selectedProductIds.length}` : "Tắt"}</strong>
                   </span>
-                  <span>•</span>
-                  <span>
-                    Voucher:{" "}
-                    <strong>
-                      {syncVouchers ? `${selectedVoucherIds.length} voucher` : "Không đồng bộ"}
-                    </strong>
+                  <span className="badge bg-light text-dark border p-2">
+                    Voucher: <strong>{syncVouchers ? `${selectedVoucherIds.length}` : "Tắt"}</strong>
                   </span>
                 </div>
               </div>
@@ -803,6 +841,7 @@ export default function ChainSyncPage() {
                 <Button
                   variant="primary"
                   type="submit"
+                  size="lg"
                   disabled={syncing || !isFormValid}
                 >
                   {syncing ? <Spinner size="sm" className="me-2" /> : null}
