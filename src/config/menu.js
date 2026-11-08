@@ -8,8 +8,6 @@ export const APP_MENU = [
   {
     group: "Vận hành",
     items: [
-      { key: "pos", label: "Bán hàng (POS)", path: "/pos", icon: "pos", permission: PERMISSIONS.POS_OPERATE, roles: ["COO", "BRANCH_MANAGER"] },
-      { key: "orders", label: "Đơn hàng", path: "/branch/orders", icon: "orders", permission: PERMISSIONS.ORDER_VIEW },
       { key: "inventory", label: "Kho", path: "/branch/inventory", icon: "inventory", permission: PERMISSIONS.INVENTORY_MANAGE },
       { key: "branch-overview", label: "Tổng quan chi nhánh", path: "/branch/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
       { key: "chain-overview", label: "Tổng quan chuỗi", path: "/chain/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
@@ -42,9 +40,9 @@ export const POS_MENU = [
 ];
 
 // Lọc menu theo permissions và roles của người dùng hiện tại; nhóm rỗng bị loại.
-// Khi chưa đăng nhập (ở quầy POS tự động / public): chỉ hiển thị các chức năng quầy POS.
+// Khi chưa đăng nhập hoặc là Thu ngân (CASHIER): chỉ hiển thị các chức năng quầy POS.
 export function buildMenu(user) {
-  if (!user) return POS_MENU;
+  if (!user || user.role === "CASHIER") return POS_MENU;
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   return APP_MENU.map((section) => ({
     ...section,
