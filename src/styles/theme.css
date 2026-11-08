@@ -1,0 +1,335 @@
+/* =========================================================
+   Map design tokens của SCMS lên React Bootstrap.
+   Nguyên tắc (tài liệu thiết kế mục 3.1): dữ liệu trước,
+   trang trí sau; panel phẳng, không shadow (trừ floating);
+   accent chỉ cho hành động chính / trạng thái active / focus.
+   ========================================================= */
+
+html {
+  font-size: 14px;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+h1,
+.h1 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+}
+
+h2,
+.h2 {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.small {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.text-muted-scms {
+  color: var(--muted);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink-2);
+}
+
+/* ---------- Buttons ---------- */
+/* Khớp prototype app.css .btn: 13px/500, min-height 36px, padding 0 14px.
+   Hành động chính (btn-primary) = accent cà phê; nút thường = nền
+   surface + viền line; biến thể mực dùng class .btn-ink. */
+.btn {
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 13px;
+  min-height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.btn-sm {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.btn-lg {
+  min-height: 48px;
+  padding: 0 20px;
+  font-size: 14px;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-color: #fffdf9;
+  --bs-btn-hover-bg: var(--accent-dark);
+  --bs-btn-hover-border-color: var(--accent-dark);
+  --bs-btn-hover-color: #fffdf9;
+  --bs-btn-active-bg: var(--accent-dark);
+  --bs-btn-active-border-color: var(--accent-dark);
+  --bs-btn-disabled-bg: var(--accent);
+  --bs-btn-disabled-border-color: var(--accent);
+  --bs-btn-disabled-color: #fffdf9;
+}
+
+.btn-ink {
+  --bs-btn-bg: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-color: var(--surface);
+  --bs-btn-hover-bg: #2d2925;
+  --bs-btn-hover-border-color: #2d2925;
+  --bs-btn-hover-color: var(--surface);
+  --bs-btn-active-bg: var(--ink);
+  --bs-btn-active-border-color: var(--ink);
+}
+
+.btn-outline-secondary {
+  --bs-btn-bg: var(--surface);
+  --bs-btn-color: var(--ink);
+  --bs-btn-border-color: var(--line);
+  --bs-btn-hover-bg: var(--paper-2);
+  --bs-btn-hover-color: var(--ink);
+  --bs-btn-hover-border-color: var(--line-strong);
+  --bs-btn-active-bg: var(--paper-2);
+  --bs-btn-active-color: var(--ink);
+  --bs-btn-active-border-color: var(--line-strong);
+}
+
+/* Hành động phá hủy: nền mực đậm + nhãn rõ, không dùng đỏ (mục 4.2). */
+.btn-danger {
+  --bs-btn-bg: var(--danger);
+  --bs-btn-border-color: var(--danger);
+  --bs-btn-color: #fff;
+  --bs-btn-hover-bg: #000;
+  --bs-btn-hover-border-color: #000;
+}
+
+/* ---------- Forms ---------- */
+/* Khớp prototype .input/.select: 13px, padding 7px 10px, min-height 36px,
+   viền --line; cỡ lớn (màn hình đăng nhập): 46px/15px. */
+.form-control,
+.form-select {
+  border-radius: var(--radius-xs);
+  border-color: var(--line);
+  background-color: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  padding: 7px 10px;
+  min-height: 36px;
+}
+
+.form-control::placeholder {
+  color: #a59e95;
+}
+
+.form-control:hover,
+.form-select:hover {
+  border-color: var(--line-strong);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(138, 90, 59, 0.12);
+}
+
+.form-control-lg,
+.form-select-lg {
+  min-height: 46px;
+  font-size: 15px;
+  padding: 7px 12px;
+}
+
+.form-label {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  margin-bottom: 5px;
+}
+
+.form-text {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Lỗi dưới field theo prototype .field .error: chữ mực đậm,
+   tiền tố "!" màu accent. */
+.field-error {
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.field-error::before {
+  content: "! ";
+  color: var(--accent);
+}
+
+.form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.form-check-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(138, 90, 59, 0.12);
+}
+
+/* ---------- Tables ---------- */
+/* Khớp prototype table.data: font 12.5px, ô 10px 12px,
+   header nền paper, nhãn 10px/700, chữ hoa, letter-spacing 0.08em. */
+.table {
+  --bs-table-bg: var(--surface);
+  --bs-table-color: var(--ink);
+  --bs-table-border-color: var(--line);
+  --bs-table-hover-bg: #fbf9f5;
+  --bs-table-cell-padding-x: 12px;
+  --bs-table-cell-padding-y: 10px;
+  font-size: 12.5px;
+  margin-bottom: 0;
+}
+
+.table > thead th {
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.table > tbody td {
+  vertical-align: middle;
+}
+
+.table td.num,
+.table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Tabs ---------- */
+/* Khớp prototype .tabs/.tab: khoảng cách 24px, padding 10px 0 11px,
+   tab thường 13px/500 màu muted; active chữ mực, đậm 700, gạch accent. */
+.nav-tabs {
+  border-bottom: 1px solid var(--line);
+  gap: 24px;
+}
+
+.nav-tabs .nav-link {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 10px 0 11px;
+}
+
+.nav-tabs .nav-link:hover {
+  color: var(--ink);
+  border-bottom-color: var(--line-strong);
+}
+
+.nav-tabs .nav-link.active {
+  color: var(--ink);
+  font-weight: 700;
+  background: transparent;
+  border-bottom: 2px solid var(--accent);
+}
+
+/* ---------- Pagination ---------- */
+/* Khớp prototype .pagination: nút tối thiểu 28x28px, font 11px, active nền mực. */
+.pagination {
+  --bs-pagination-color: var(--ink-2);
+  --bs-pagination-border-color: var(--line);
+  --bs-pagination-hover-color: var(--ink);
+  --bs-pagination-hover-bg: var(--paper-2);
+  --bs-pagination-hover-border-color: var(--line-strong);
+  --bs-pagination-active-bg: var(--ink);
+  --bs-pagination-active-border-color: var(--ink);
+  --bs-pagination-disabled-color: var(--muted);
+  --bs-pagination-font-size: 11px;
+  margin-bottom: 0;
+  gap: 4px;
+}
+
+.pagination .page-link {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- Modal / Toast (floating: được dùng shadow) ---------- */
+.modal-content {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-floating);
+  background: var(--surface);
+}
+
+.toast {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-floating);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* ---------- Panels ---------- */
+.scms-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.scms-divider {
+  height: 1px;
+  background: var(--line);
+}

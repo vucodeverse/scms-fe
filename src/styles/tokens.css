@@ -1,0 +1,37 @@
+/* =========================================================
+   SCMS design tokens — chuyển nguyên trạng từ prototype
+   (scms-prototype/prototype/assets/css/app.css, tài liệu
+   SCMS-UI-UX-Design.md mục 4). Concept "Sổ vận hành":
+   đơn sắc giấy/mực + một accent cà phê duy nhất.
+   ========================================================= */
+
+:root {
+  --paper: #f7f5f0;
+  --paper-2: #f1eee7;
+  --surface: #fffdf9;
+  --ink: #1a1815;
+  --ink-2: #4a4642;
+  --muted: #7a746d;
+  --line: #d8d2c8;
+  --line-strong: #b9b1a5;
+  --accent: #8a5a3b;
+  --accent-dark: #6d452d;
+  --accent-soft: #efe4da;
+  --danger: #1a1815;
+  --success: #3f4a3c;
+  --success-soft: #e9ede6;
+  --warn-soft: #f3ede2;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+
+  --topbar-h: 56px;
+  --sidebar-w: 244px;
+
+  --font-sans: "Be Vietnam Pro", "Inter", "Segoe UI", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "Courier New", monospace;
+
+  --shadow-floating: 0 8px 24px rgba(26, 24, 21, 0.12);
+}
