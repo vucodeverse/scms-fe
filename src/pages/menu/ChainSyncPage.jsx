@@ -329,7 +329,7 @@ export default function ChainSyncPage() {
       ) : (
         <Form onSubmit={handleSync}>
           {/* THANH ĐIỀU HƯỚNG NHANH CÁC PHẦN */}
-          <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
+          {/* <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
             <span className="text-muted-scms small me-1">Chuyển nhanh đến:</span>
             <Button
               variant="outline-secondary"
@@ -363,7 +363,7 @@ export default function ChainSyncPage() {
             >
               4. Voucher ({syncVouchers ? selectedVoucherIds.length : 0}/{vouchers.length})
             </Button>
-          </div>
+          </div> */}
 
           {/* ========================================================= */}
           {/* PANEL 1: CHI NHÁNH MỤC TIÊU */}
@@ -668,11 +668,10 @@ export default function ChainSyncPage() {
                                 {p.sizes.map((s) => (
                                   <span
                                     key={s.id || s.size}
-                                    className={`badge ${
-                                      s.size === p.defaultSize
+                                    className={`badge ${s.size === p.defaultSize
                                         ? "bg-primary text-white"
                                         : "bg-light text-dark border"
-                                    }`}
+                                      }`}
                                     title={s.size === p.defaultSize ? "Size mặc định" : ""}
                                   >
                                     <strong>{s.size}</strong>: {formatVnd(s.price)}
