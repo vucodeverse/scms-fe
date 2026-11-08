@@ -45,16 +45,35 @@ export default function SessionHeaderRight() {
       >
         {initialsOf(user?.fullName)}
       </span>
-      <Button
-        variant="outline-secondary"
-        size="sm"
-        onClick={async () => {
-          await logout();
-          navigate("/login");
-        }}
-      >
-        Đăng xuất
-      </Button>
+      {user && (user.role === "COO" || user.role === "BRANCH_MANAGER") ? (
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={() => navigate(user.role === "COO" ? "/chain/overview" : "/branch/overview")}
+        >
+          Trang quản trị
+        </Button>
+      ) : null}
+      {user ? (
+        <Button
+          variant="outline-secondary"
+          size="sm"
+          onClick={async () => {
+            await logout();
+            navigate("/pos");
+          }}
+        >
+          Đăng xuất
+        </Button>
+      ) : (
+        <Button
+          variant="outline-primary"
+          size="sm"
+          onClick={() => navigate("/login")}
+        >
+          Đăng nhập quản trị
+        </Button>
+      )}
     </>
   );
 }

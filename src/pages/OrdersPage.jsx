@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Spinner } from "react-bootstrap";
 import { useRouter } from "../router/HashRouter.jsx";
 import AdminLayout from "../layouts/AdminLayout.jsx";
@@ -9,9 +9,10 @@ import StatusTag from "../components/StatusTag.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu } from "../config/menu.js";
+import { buildMenu, POS_MENU } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
+import { branchesApi } from "../api/branchesApi.js";
 
 export const ORDER_STATUS_META = {
   PENDING: { label: "Chờ thanh toán", variant: "warn" },
@@ -39,9 +40,16 @@ export default function OrdersPage() {
   const { navigate } = useRouter();
   const { user } = useAuth();
   const toast = useToast();
-  const menu = buildMenu(user);
+  const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
+
+  const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState(() => {
+    if (user?.branchId) return user.branchId;
+    const saved = localStorage.getItem("scms_pos_branch_id");
+    return saved ? Number(saved) : "";
+  });
 
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -51,11 +59,28 @@ export default function OrdersPage() {
   const [page, setPage] = useState({ content: [], totalPages: 0, totalElements: 0 });
   const [loading, setLoading] = useState(true);
 
+  // Tải danh sách chi nhánh nếu chưa đăng nhập hoặc là COO
+  useEffect(() => {
+    if (!user?.branchId) {
+      branchesApi.list({ uiPage: 1, size: 100 })
+        .then((res) => setBranches(res.items || []))
+        .catch(() => {});
+    }
+  }, [user?.branchId]);
+
+  const branchMap = useMemo(() => {
+    const map = {};
+    for (const b of branches) map[b.id] = b.name;
+    return map;
+  }, [branches]);
+
+  const effectiveBranchId = user?.branchId || (selectedBranchId ? Number(selectedBranchId) : undefined);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await ordersApi.list({
-        branchId: user?.branchId || undefined,
+        branchId: effectiveBranchId,
         status: status || undefined,
         keyword: keyword.trim() || undefined,
         fromDate: dayStartIso(fromDate),
@@ -69,7 +94,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.branchId, status, keyword, fromDate, toDate, uiPage]);
+  }, [effectiveBranchId, status, keyword, fromDate, toDate, uiPage]);
 
   useEffect(() => {
     load();
@@ -97,6 +122,15 @@ export default function OrdersPage() {
         </a>
       ),
     },
+    ...(!user?.branchId
+      ? [
+          {
+            key: "branchId",
+            header: "Chi nhánh",
+            render: (r) => branchMap[r.branchId] || `CN #${r.branchId}`,
+          },
+        ]
+      : []),
     { key: "createdAt", header: "Thời gian", render: (r) => formatDateTime(r.createdAt) },
     { key: "cashierId", header: "Thu ngân", render: (r) => (r.cashierId ? `NV #${r.cashierId}` : "—") },
     { key: "totalAmount", header: "Tổng tiền", numeric: true, render: (r) => formatVnd(r.totalAmount) },
@@ -114,6 +148,25 @@ export default function OrdersPage() {
 
   const toolbar = (
     <Form onSubmit={search} className="d-flex gap-2 flex-wrap align-items-center">
+      {!user?.branchId && branches.length > 0 ? (
+        <Form.Select
+          value={selectedBranchId || ""}
+          onChange={(e) => {
+            const val = e.target.value ? Number(e.target.value) : "";
+            setSelectedBranchId(val);
+            if (val) localStorage.setItem("scms_pos_branch_id", String(val));
+            setUiPage(1);
+          }}
+          style={{ maxWidth: 190 }}
+        >
+          <option value="">Tất cả chi nhánh</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </Form.Select>
+      ) : null}
       <Form.Control
         placeholder="Tìm theo số hóa đơn…"
         value={keyword}
@@ -139,7 +192,7 @@ export default function OrdersPage() {
   return (
     <AdminLayout
       menu={menu}
-      branchName={user?.branchName || undefined}
+      branchName={user?.branchName || (selectedBranchId ? branchMap[selectedBranchId] : undefined)}
       headerRight={<SessionHeaderRight />}
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}
@@ -150,7 +203,7 @@ export default function OrdersPage() {
         description="Đơn bán tại quầy của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
         actions={
           <Button variant="primary" onClick={() => navigate("/pos")}>
-            Tạo đơn mới (POS)
+            + Tạo đơn mới (POS)
           </Button>
         }
       />

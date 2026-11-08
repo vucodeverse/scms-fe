@@ -10,7 +10,7 @@ import { ORDER_STATUS_META } from "./OrdersPage.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu } from "../config/menu.js";
+import { buildMenu, POS_MENU } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { paymentsApi } from "../api/paymentsApi.js";
@@ -22,7 +22,7 @@ export default function OrderDetailPage() {
   const { query, navigate } = useRouter();
   const { user } = useAuth();
   const toast = useToast();
-  const menu = buildMenu(user);
+  const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const id = Number(query?.id);
@@ -92,13 +92,24 @@ export default function OrderDetailPage() {
         screenCode="SCR-05 · Chi tiết đơn"
         description="Thông tin đơn, các món đã gọi và các thao tác thanh toán / hủy đơn."
         actions={
-          <Button
-            variant="outline-secondary"
-            onClick={() => navigate("/branch/orders")}
-            href="#/branch/orders"
-          >
-            Quay lại danh sách
-          </Button>
+          <div className="d-flex gap-2">
+            <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={() => navigate("/pos")}
+              href="#/pos"
+            >
+              Về quầy POS
+            </Button>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => navigate("/branch/orders")}
+              href="#/branch/orders"
+            >
+              Quay lại danh sách
+            </Button>
+          </div>
         }
       />
 

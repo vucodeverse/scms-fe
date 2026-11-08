@@ -124,8 +124,20 @@ export default function LoginPage() {
             )}
           </Button>
 
-          <div className="text-center mt-3">
-            <button type="button" className="link-btn" onClick={() => navigate("/kiosk")}>
+          <div className="d-flex flex-column align-items-center gap-2 mt-3">
+            <button
+              type="button"
+              className="link-btn fw-bold"
+              style={{ fontSize: 14 }}
+              onClick={() => navigate("/pos")}
+            >
+              <Icon name="pos" size={16} /> Mở quầy bán hàng (POS)
+            </button>
+            <button
+              type="button"
+              className="link-btn text-muted-scms small"
+              onClick={() => navigate("/kiosk")}
+            >
               Chuyển sang Kiosk chấm công
             </button>
           </div>

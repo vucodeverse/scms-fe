@@ -29,9 +29,22 @@ export const APP_MENU = [
   },
 ];
 
+// Menu dành riêng cho quầy POS (chỉ gồm các chức năng bán hàng, tra cứu đơn tại quầy, chấm công)
+export const POS_MENU = [
+  {
+    group: "Quầy bán hàng",
+    items: [
+      { key: "pos", label: "Gọi món (POS)", path: "/pos", icon: "pos" },
+      { key: "orders", label: "Đơn hàng tại quầy", path: "/branch/orders", icon: "orders" },
+      { key: "kiosk", label: "Chấm công (Kiosk)", path: "/kiosk", icon: "clock" },
+    ],
+  },
+];
+
 // Lọc menu theo permissions và roles của người dùng hiện tại; nhóm rỗng bị loại.
+// Khi chưa đăng nhập (ở quầy POS tự động / public): chỉ hiển thị các chức năng quầy POS.
 export function buildMenu(user) {
-  if (!user) return [];
+  if (!user) return POS_MENU;
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   return APP_MENU.map((section) => ({
     ...section,

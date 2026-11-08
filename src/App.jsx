@@ -48,7 +48,7 @@ function RootDispatch() {
 
   useEffect(() => {
     if (status === "authenticated" && user) navigate(landingPath({ user }));
-    else if (status === "anonymous") navigate("/login");
+    else if (status === "anonymous") navigate("/pos");
   }, [status, user, navigate]);
 
   return (
@@ -86,13 +86,7 @@ export default function App() {
               },
               {
                 pattern: "/pos",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <PosPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <PosPage />,
               },
               {
                 pattern: "/branch/inventory/slip",
@@ -126,23 +120,11 @@ export default function App() {
               },
               {
                 pattern: "/branch/orders/detail",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <OrderDetailPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <OrderDetailPage />,
               },
               {
                 pattern: "/branch/orders",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <OrdersPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <OrdersPage />,
               },
               {
                 pattern: "/chain/menu",

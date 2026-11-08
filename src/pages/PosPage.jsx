@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Form, Spinner } from "react-bootstrap";
+import { Button, Form, Modal, Spinner } from "react-bootstrap";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
 import StatusTag from "../components/StatusTag.jsx";
+import FormField from "../components/FormField.jsx";
+import Icon from "../components/Icon.jsx";
 import OrderPaymentPanel from "../components/OrderPaymentPanel.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
+import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu } from "../config/menu.js";
+import { POS_MENU } from "../config/menu.js";
 import { formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
 import { branchesApi } from "../api/branchesApi.js";
 import { ordersApi } from "../api/ordersApi.js";
+import { attendanceApi } from "../api/attendanceApi.js";
+import { tokenStore } from "../api/tokenStore.js";
 
 const LEVELS = ["0%", "30%", "50%", "70%", "100%"];
 
@@ -24,9 +29,11 @@ const LEVELS = ["0%", "30%", "50%", "70%", "100%"];
 // mà chưa trả tiền vẫn ở trạng thái PENDING trong danh sách đơn hàng
 // (đơn chờ) — mở lại từ trang Đơn hàng để thanh toán tiếp.
 export default function PosPage() {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
+  const { navigate } = useRouter();
   const toast = useToast();
-  const menu = buildMenu(user);
+  // Màn POS chỉ hiển thị các chức năng của quầy POS (Gọi món, Đơn quầy, Chấm công)
+  const menu = POS_MENU;
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -34,7 +41,11 @@ export default function PosPage() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [branchId, setBranchId] = useState(user?.branchId || null);
+  const [branchId, setBranchId] = useState(() => {
+    if (user?.branchId) return user.branchId;
+    const saved = localStorage.getItem("scms_pos_branch_id");
+    return saved ? Number(saved) : null;
+  });
   const [keyword, setKeyword] = useState("");
   const [categoryId, setCategoryId] = useState(null);
 
@@ -42,6 +53,15 @@ export default function PosPage() {
   const [orderNote, setOrderNote] = useState("");
   const [creating, setCreating] = useState(false);
   const [order, setOrder] = useState(null); // OrderDetailDto sau khi tạo
+
+  // Trạng thái modal Check in / Check out
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [attEmployees, setAttEmployees] = useState([]);
+  const [loadingAttEmployees, setLoadingAttEmployees] = useState(false);
+  const [selectedEmpId, setSelectedEmpId] = useState("");
+  const [attPin, setAttPin] = useState("");
+  const [attBusy, setAttBusy] = useState(false);
+  const [attMessage, setAttMessage] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,7 +76,15 @@ export default function PosPage() {
         const brPage = await branchesApi.list({ uiPage: 1, size: 100 });
         const open = (brPage.items || []).filter((b) => b.status === "OPEN");
         setBranches(open);
-        if (open.length) setBranchId((cur) => cur || open[0].id);
+        if (open.length) {
+          setBranchId((cur) => {
+            const saved = localStorage.getItem("scms_pos_branch_id");
+            const match = open.find((b) => String(b.id) === saved);
+            const val = match ? match.id : (cur || open[0].id);
+            localStorage.setItem("scms_pos_branch_id", String(val));
+            return val;
+          });
+        }
       }
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được menu bán hàng.");
@@ -68,6 +96,64 @@ export default function PosPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadAttendanceEmployees = useCallback(async (bId) => {
+    if (!bId) return;
+    setLoadingAttEmployees(true);
+    setAttMessage(null);
+    try {
+      const list = await attendanceApi.kioskEmployees(bId);
+      setAttEmployees(list || []);
+      if (list && list.length > 0) {
+        setSelectedEmpId((cur) => cur || String(list[0].employeeId));
+      }
+    } catch (err) {
+      setAttMessage({ type: "error", text: err.message || "Không tải được danh sách nhân sự." });
+    } finally {
+      setLoadingAttEmployees(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showAttendanceModal) {
+      loadAttendanceEmployees(branchId || 1);
+      setAttPin("");
+      setAttMessage(null);
+    }
+  }, [showAttendanceModal, branchId, loadAttendanceEmployees]);
+
+  async function handleAttendanceSubmit(e) {
+    e?.preventDefault();
+    if (!selectedEmpId || !attPin.trim() || attBusy) return;
+    const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
+    if (!emp) return;
+
+    setAttBusy(true);
+    setAttMessage(null);
+    const targetBranch = branchId || 1;
+    const payload = {
+      branchId: targetBranch,
+      employeeId: Number(selectedEmpId),
+      pin: attPin.trim(),
+    };
+
+    try {
+      const dto = emp.isCheckedIn
+        ? await attendanceApi.checkOut(payload)
+        : await attendanceApi.checkIn(payload);
+
+      const actionText = emp.isCheckedIn ? "Check-out (Tan ca)" : "Check-in (Vào ca)";
+      const successMsg = `${actionText} thành công cho ${dto.employeeName || emp.fullName}!`;
+      setAttMessage({ type: "success", text: successMsg });
+      toast.success(successMsg);
+      setAttPin("");
+      await loadAttendanceEmployees(targetBranch);
+    } catch (err) {
+      setAttMessage({ type: "error", text: err.message || "Mã PIN không đúng hoặc đã xảy ra lỗi." });
+    } finally {
+      setAttBusy(false);
+    }
+  }
 
   const visibleProducts = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -193,30 +279,43 @@ export default function PosPage() {
   return (
     <AdminLayout
       menu={menu}
-      branchName={user?.branchName || undefined}
+      branchName={user?.branchName || branches.find((b) => b.id === branchId)?.name || undefined}
       headerRight={<SessionHeaderRight />}
-      userName={user?.fullName}
-      userRole={roleLabel(user?.role)}
+      userName={user?.fullName || "Quầy thu ngân"}
+      userRole={roleLabel(user?.role) || "POS tại quầy"}
     >
       <PageHeader
         title="Bán hàng tại quầy"
         screenCode="SCR-04 · POS"
         description="Chọn món, tạo đơn và thu tiền mặt hoặc VietQR."
         actions={
-          !user?.branchId ? (
-            <Form.Select
-              value={branchId || ""}
-              onChange={(e) => setBranchId(Number(e.target.value))}
-              style={{ minWidth: 220 }}
-              disabled={locked}
+          <div className="d-flex align-items-center gap-2">
+            {!user?.branchId ? (
+              <Form.Select
+                value={branchId || ""}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setBranchId(val);
+                  localStorage.setItem("scms_pos_branch_id", String(val));
+                }}
+                style={{ minWidth: 200 }}
+                disabled={locked}
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.code} — {b.name}
+                  </option>
+                ))}
+              </Form.Select>
+            ) : null}
+            <Button
+              variant="outline-primary"
+              className="d-flex align-items-center gap-1"
+              onClick={() => setShowAttendanceModal(true)}
             >
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.code} — {b.name}
-                </option>
-              ))}
-            </Form.Select>
-          ) : null
+              <Icon name="clock" size={15} /> Check in / Check out
+            </Button>
+          </div>
         }
       />
 
@@ -460,6 +559,130 @@ export default function PosPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Check in / Check out ngay trên quầy POS */}
+      <Modal
+        show={showAttendanceModal}
+        onHide={() => setShowAttendanceModal(false)}
+        centered
+        backdrop="static"
+      >
+        <Modal.Header closeButton={!attBusy}>
+          <Modal.Title as="h2">Chấm công nhân viên</Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={handleAttendanceSubmit}>
+          <Modal.Body>
+            <div className="text-muted-scms small mb-3">
+              Ghi nhận giờ vào ca (Check-in) hoặc hết ca (Check-out) bằng mã PIN cá nhân.
+            </div>
+
+            {attMessage ? (
+              <div
+                className={`notice mb-3 ${
+                  attMessage.type === "success" ? "" : "notice--warn text-danger"
+                }`}
+              >
+                <strong>{attMessage.type === "success" ? "✓" : "!"}</strong>
+                <span>{attMessage.text}</span>
+              </div>
+            ) : null}
+
+            {loadingAttEmployees ? (
+              <div className="text-center py-4">
+                <Spinner size="sm" className="me-2" /> Đang tải nhân sự chi nhánh…
+              </div>
+            ) : (
+              <>
+                <FormField label="Chọn nhân viên" required className="mb-3">
+                  <Form.Select
+                    value={selectedEmpId}
+                    onChange={(e) => {
+                      setSelectedEmpId(e.target.value);
+                      setAttMessage(null);
+                    }}
+                    disabled={attBusy}
+                  >
+                    {attEmployees.map((e) => (
+                      <option key={e.employeeId} value={e.employeeId}>
+                        {e.fullName} ({e.role}) — {e.isCheckedIn ? "🟢 Đang trong ca" : "⚪ Chưa vào ca"}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </FormField>
+
+                {(() => {
+                  const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
+                  if (!emp) return null;
+                  return (
+                    <div
+                      className="d-flex align-items-center justify-content-between p-2 rounded mb-3"
+                      style={{ background: "var(--paper-2)" }}
+                    >
+                      <span className="small text-muted-scms">Trạng thái hiện tại:</span>
+                      <StatusTag
+                        status={emp.isCheckedIn ? "CHECKED_IN" : "DRAFT"}
+                        label={emp.isCheckedIn ? "Đang trong ca làm việc" : "Chưa vào ca"}
+                        variant={emp.isCheckedIn ? "dark" : "neutral"}
+                      />
+                    </div>
+                  );
+                })()}
+
+                <FormField label="Mã PIN cá nhân (4 số)" required className="mb-2">
+                  <Form.Control
+                    type="password"
+                    maxLength={6}
+                    autoFocus
+                    placeholder="••••"
+                    value={attPin}
+                    onChange={(e) => setAttPin(e.target.value)}
+                    disabled={attBusy}
+                    style={{ fontSize: 18, letterSpacing: 4, textAlign: "center" }}
+                  />
+                </FormField>
+              </>
+            )}
+          </Modal.Body>
+          <Modal.Footer className="d-flex justify-content-between">
+            <Button
+              variant="link"
+              size="sm"
+              className="p-0 text-muted-scms"
+              type="button"
+              onClick={() => {
+                setShowAttendanceModal(false);
+                navigate("/kiosk");
+              }}
+            >
+              Mở Kiosk toàn màn hình →
+            </Button>
+            <div className="d-flex gap-2">
+              <Button
+                variant="outline-secondary"
+                type="button"
+                onClick={() => setShowAttendanceModal(false)}
+                disabled={attBusy}
+              >
+                Đóng
+              </Button>
+              {(() => {
+                const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
+                const isOut = emp?.isCheckedIn;
+                return (
+                  <Button
+                    variant={isOut ? "outline-danger" : "primary"}
+                    type="submit"
+                    disabled={attBusy || !attPin.trim() || !selectedEmpId}
+                  >
+                    {attBusy ? <Spinner size="sm" className="me-2" /> : null}
+                    {isOut ? "Check Out (Tan ca)" : "Check In (Vào ca)"}
+                  </Button>
+                );
+              })()}
+            </div>
+          </Modal.Footer>
+        </Form>
+      </Modal>
     </AdminLayout>
   );
 }
