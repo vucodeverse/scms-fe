@@ -120,23 +120,11 @@ export default function App() {
               },
               {
                 pattern: "/branch/orders/detail",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <OrderDetailPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <OrderDetailPage />,
               },
               {
                 pattern: "/branch/orders",
-                render: () => (
-                  <RequireAuth>
-                    <RequireRole roles={["COO", "BRANCH_MANAGER", "CASHIER"]}>
-                      <OrdersPage />
-                    </RequireRole>
-                  </RequireAuth>
-                ),
+                render: () => <OrdersPage />,
               },
               {
                 pattern: "/chain/menu",

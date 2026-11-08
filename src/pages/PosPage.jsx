@@ -41,7 +41,11 @@ export default function PosPage() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [branchId, setBranchId] = useState(user?.branchId || null);
+  const [branchId, setBranchId] = useState(() => {
+    if (user?.branchId) return user.branchId;
+    const saved = localStorage.getItem("scms_pos_branch_id");
+    return saved ? Number(saved) : null;
+  });
   const [keyword, setKeyword] = useState("");
   const [categoryId, setCategoryId] = useState(null);
 
@@ -72,7 +76,15 @@ export default function PosPage() {
         const brPage = await branchesApi.list({ uiPage: 1, size: 100 });
         const open = (brPage.items || []).filter((b) => b.status === "OPEN");
         setBranches(open);
-        if (open.length) setBranchId((cur) => cur || open[0].id);
+        if (open.length) {
+          setBranchId((cur) => {
+            const saved = localStorage.getItem("scms_pos_branch_id");
+            const match = open.find((b) => String(b.id) === saved);
+            const val = match ? match.id : (cur || open[0].id);
+            localStorage.setItem("scms_pos_branch_id", String(val));
+            return val;
+          });
+        }
       }
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được menu bán hàng.");
@@ -281,7 +293,11 @@ export default function PosPage() {
             {!user?.branchId ? (
               <Form.Select
                 value={branchId || ""}
-                onChange={(e) => setBranchId(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setBranchId(val);
+                  localStorage.setItem("scms_pos_branch_id", String(val));
+                }}
                 style={{ minWidth: 200 }}
                 disabled={locked}
               >
