@@ -88,17 +88,32 @@ export default function ChainSyncPage() {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      const [brRes, cats, prodPage, voucherRes] = await Promise.all([
-        branchesApi.list({ uiPage: 1, size: 100, sortBy: "code", sortDir: "ASC" }).catch(() => ({ items: [] })),
-        categoriesApi.listAll().catch(() => []),
-        productsApi.list({ uiPage: 1, size: 200 }).catch(() => ({ items: [] })),
-        vouchersApi.list({ uiPage: 1, size: 100 }).catch(() => ({ items: [] })),
-      ]);
+      let brItems = [];
+      let catItems = [];
+      let prodItems = [];
+      let vItems = [];
 
-      const brItems = brRes.items || [];
-      const catItems = cats || [];
-      const prodItems = prodPage.items || [];
-      const vItems = voucherRes.items || [];
+      try {
+        const preview = await syncConfigApi.getPreview();
+        if (preview) {
+          brItems = preview.branches || [];
+          catItems = preview.categories || [];
+          prodItems = preview.products || [];
+          vItems = preview.vouchers || [];
+        }
+      } catch {
+        const [brRes, cats, prods, voucherRes] = await Promise.all([
+          branchesApi.list({ uiPage: 1, size: 100, sortBy: "code", sortDir: "ASC" }).catch(() => ({ items: [] })),
+          categoriesApi.listAll().catch(() => []),
+          syncConfigApi.getProducts().catch(() => productsApi.list({ uiPage: 1, size: 200 }).then((r) => r.items || []).catch(() => [])),
+          vouchersApi.list({ uiPage: 1, size: 100 }).catch(() => ({ items: [] })),
+        ]);
+
+        brItems = brRes.items || [];
+        catItems = cats || [];
+        prodItems = Array.isArray(prods) ? prods : prods.items || [];
+        vItems = voucherRes.items || [];
+      }
 
       setBranches(brItems);
       setCategories(catItems);
