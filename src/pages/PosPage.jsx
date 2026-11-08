@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Form, Modal, Spinner } from "react-bootstrap";
+import { Button, Form, Modal, Spinner, Table } from "react-bootstrap";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
@@ -12,7 +12,7 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
 import { POS_MENU } from "../config/menu.js";
-import { formatVnd } from "../lib/format.js";
+import { formatNumber, formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
 import { branchesApi } from "../api/branchesApi.js";
@@ -62,6 +62,41 @@ export default function PosPage() {
   const [attPin, setAttPin] = useState("");
   const [attBusy, setAttBusy] = useState(false);
   const [attMessage, setAttMessage] = useState(null);
+
+  // Trạng thái modal Công thức pha chế (Barista BOM)
+  const [recipeModalProduct, setRecipeModalProduct] = useState(null);
+  const [recipeModalSize, setRecipeModalSize] = useState("M");
+  const [recipeData, setRecipeData] = useState(null);
+  const [loadingRecipe, setLoadingRecipe] = useState(false);
+  const [recipeError, setRecipeError] = useState(null);
+
+  const openRecipeModal = (prod, defaultSz) => {
+    if (!prod) return;
+    setRecipeModalProduct(prod);
+    const sz = defaultSz || prod.defaultSize || prod.sizes?.[0]?.size || "M";
+    setRecipeModalSize(sz);
+  };
+
+  useEffect(() => {
+    if (!recipeModalProduct) {
+      setRecipeData(null);
+      return;
+    }
+    setLoadingRecipe(true);
+    setRecipeError(null);
+    productsApi
+      .recipe(recipeModalProduct.id, recipeModalSize)
+      .then((data) => {
+        setRecipeData(data || null);
+      })
+      .catch((err) => {
+        setRecipeError(err.message || "Không tải được công thức của món này.");
+        setRecipeData(null);
+      })
+      .finally(() => {
+        setLoadingRecipe(false);
+      });
+  }, [recipeModalProduct, recipeModalSize]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,6 +344,14 @@ export default function PosPage() {
               </Form.Select>
             ) : null}
             <Button
+              variant="outline-secondary"
+              className="d-flex align-items-center gap-1"
+              onClick={() => openRecipeModal(visibleProducts[0] || products[0])}
+              disabled={products.length === 0}
+            >
+              <Icon name="book" size={15} /> Công thức pha chế
+            </Button>
+            <Button
               variant="outline-primary"
               className="d-flex align-items-center gap-1"
               onClick={() => setShowAttendanceModal(true)}
@@ -355,28 +398,60 @@ export default function PosPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                gap: 10,
+                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+                gap: 12,
               }}
             >
               {visibleProducts.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
-                  className="scms-panel panel-pad text-start"
-                  onClick={() => addToCart(p)}
-                  disabled={locked}
-                  style={{ cursor: locked ? "not-allowed" : "pointer" }}
+                  className="scms-panel panel-pad text-start d-flex flex-column justify-content-between"
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--line, #e2e8f0)",
+                    background: "#fff",
+                  }}
                 >
-                  <div style={{ fontWeight: 600 }}>{p.name}</div>
-                  <div className="text-muted" style={{ fontSize: 12 }}>
-                    {p.categoryName || ""}
+                  <div
+                    onClick={() => !locked && addToCart(p)}
+                    style={{ cursor: locked ? "not-allowed" : "pointer" }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                    <div className="text-muted" style={{ fontSize: 12 }}>
+                      {p.categoryName || ""}
+                    </div>
+                    <div className="mt-1">
+                      <strong>{formatVnd(priceOf(p, p.defaultSize || p.sizes?.[0]?.size))}</strong>
+                      <span className="text-muted" style={{ fontSize: 12 }}>
+                        {" "}· size {p.defaultSize || p.sizes?.[0]?.size || "—"}
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-1">
-                    <strong>{formatVnd(priceOf(p, p.defaultSize || p.sizes?.[0]?.size))}</strong>
-                    <span className="text-muted"> · size {p.defaultSize || p.sizes?.[0]?.size || "—"}</span>
+                  <div className="mt-2 pt-2 border-top d-flex justify-content-between align-items-center">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-link p-0 text-decoration-none d-flex align-items-center gap-1 text-secondary"
+                      style={{ fontSize: 12 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openRecipeModal(p);
+                      }}
+                      title="Xem công thức pha chế"
+                    >
+                      <Icon name="book" size={13} /> Công thức
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary py-0 px-2"
+                      style={{ fontSize: 12, lineHeight: "20px" }}
+                      onClick={() => !locked && addToCart(p)}
+                      disabled={locked}
+                    >
+                      + Chọn
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
               {visibleProducts.length === 0 ? (
                 <div className="text-muted">Không có món nào đang bán trong nhóm này.</div>
@@ -682,6 +757,162 @@ export default function PosPage() {
             </div>
           </Modal.Footer>
         </Form>
+      </Modal>
+
+      {/* Modal Công thức pha chế (POS Barista BOM) */}
+      <Modal
+        show={Boolean(recipeModalProduct)}
+        onHide={() => setRecipeModalProduct(null)}
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton>
+          <div className="d-flex align-items-center gap-2">
+            <Icon name="book" size={20} />
+            <div>
+              <Modal.Title style={{ fontSize: 18 }}>
+                Công thức pha chế · {recipeModalProduct?.name}
+              </Modal.Title>
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                Định lượng chuẩn và quy trình pha chế
+              </div>
+            </div>
+          </div>
+        </Modal.Header>
+        <Modal.Body>
+          {recipeModalProduct && (
+            <>
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="fw-bold">Chọn món khác:</span>
+                  <Form.Select
+                    size="sm"
+                    value={recipeModalProduct.id}
+                    onChange={(e) => {
+                      const found = products.find((p) => String(p.id) === e.target.value);
+                      if (found) openRecipeModal(found);
+                    }}
+                    style={{ minWidth: 200 }}
+                  >
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.categoryName || "Món"})
+                      </option>
+                    ))}
+                  </Form.Select>
+                </div>
+
+                <div className="d-flex align-items-center gap-2">
+                  <span className="fw-bold">Size:</span>
+                  <div className="btn-group btn-group-sm">
+                    {["S", "M", "L"].map((s) => {
+                      const szObj = (recipeModalProduct.sizes || []).find((x) => x.size === s);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`btn ${
+                            recipeModalSize === s ? "btn-primary" : "btn-outline-secondary"
+                          }`}
+                          onClick={() => setRecipeModalSize(s)}
+                        >
+                          Size {s} {szObj ? `(${formatVnd(szObj.price)})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {loadingRecipe ? (
+                <div className="text-center py-5">
+                  <Spinner size="sm" className="me-2" /> Đang tải công thức pha chế…
+                </div>
+              ) : recipeError ? (
+                <div className="alert alert-warning mb-0">{recipeError}</div>
+              ) : !recipeData?.items || recipeData.items.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-muted mb-2" style={{ fontSize: 32 }}>
+                    ☕
+                  </div>
+                  <h5>Chưa có định lượng cho món này</h5>
+                  <p className="text-muted mb-0">
+                    Món chưa được thiết lập công thức trong hệ thống (Menu & BOM &gt; Công thức).
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="table-responsive border rounded mb-3">
+                    <Table hover className="mb-0 align-middle">
+                      <thead className="table-light">
+                        <tr>
+                          <th style={{ width: 40 }}>#</th>
+                          <th>Nguyên liệu</th>
+                          <th className="num" style={{ width: 140 }}>
+                            Định lượng chuẩn
+                          </th>
+                          <th style={{ width: 120 }}>Đơn vị</th>
+                          <th style={{ width: 140 }}>Phạm vi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recipeData.items.map((line, idx) => (
+                          <tr key={idx}>
+                            <td className="text-muted">{idx + 1}</td>
+                            <td>
+                              <strong>{line.ingredientName}</strong>
+                            </td>
+                            <td className="num fw-bold text-primary" style={{ fontSize: 15 }}>
+                              {formatNumber(line.quantityBase)}
+                            </td>
+                            <td>
+                              <code>{line.baseUnit}</code>
+                            </td>
+                            <td>
+                              {line.size ? (
+                                <span className="badge bg-secondary">Riêng Size {line.size}</span>
+                              ) : (
+                                <span className="badge bg-light text-dark border">Chung</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+
+                  <div className="p-3 bg-light rounded border">
+                    <h6 className="fw-bold mb-2">📋 Quy trình pha chế chuẩn F&B:</h6>
+                    <ol className="mb-0 ps-3 text-secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
+                      <li>Đong chính xác định lượng nguyên liệu theo bảng trên vào ca/ly lường.</li>
+                      <li>Khuấy đều hoặc sục sữa/đánh bọt (nếu là món nóng/matcha/latte) đạt nhiệt độ 65-70°C.</li>
+                      <li>Cho đá viên đúng vạch ly chuẩn size {recipeModalSize}, rót thành phẩm vào ly.</li>
+                      <li>Thêm topping đi kèm theo yêu cầu của khách hàng (nếu có).</li>
+                      <li>Đậy nắp hoặc dán màng bọc kín, lau sạch miệng ly trước khi chuyển quầy trả đồ.</li>
+                    </ol>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer className="d-flex justify-content-between">
+          <Button
+            variant="outline-primary"
+            onClick={() => {
+              if (recipeModalProduct && !locked) {
+                addToCart(recipeModalProduct);
+                toast.success(`Đã thêm ${recipeModalProduct.name} vào đơn!`);
+              }
+            }}
+            disabled={locked || !recipeModalProduct}
+          >
+            + Thêm món này vào đơn
+          </Button>
+          <Button variant="secondary" onClick={() => setRecipeModalProduct(null)}>
+            Đóng
+          </Button>
+        </Modal.Footer>
       </Modal>
     </AdminLayout>
   );

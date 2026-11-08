@@ -34,6 +34,12 @@ export const productsApi = {
   recipe(id, size) {
     return http.get(`/products/${id}/recipe`, { params: size ? { size } : {} });
   },
+  saveRecipe(id, payload) {
+    return http.put(`/products/${id}/recipe`, payload);
+  },
+  deleteRecipe(id, size) {
+    return http.delete(`/products/${id}/recipe`, { params: size ? { size } : {} });
+  },
   listSizes(id) {
     return http.get(`/products/${id}/sizes`);
   },
