@@ -302,11 +302,6 @@ export default function ChainSyncPage() {
       (syncProducts && selectedProductIds.length > 0) ||
       (syncVouchers && (selectedVoucherIds.length > 0 || vouchers.length === 0)));
 
-  function scrollToSection(id) {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   return (
     <TaskLayout
       title="Đồng bộ chuỗi xuống chi nhánh"
@@ -328,43 +323,6 @@ export default function ChainSyncPage() {
         </div>
       ) : (
         <Form onSubmit={handleSync}>
-          {/* THANH ĐIỀU HƯỚNG NHANH CÁC PHẦN */}
-          {/* <div className="d-flex gap-2 mb-3 flex-wrap align-items-center">
-            <span className="text-muted-scms small me-1">Chuyển nhanh đến:</span>
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              type="button"
-              onClick={() => scrollToSection("panel-branches")}
-            >
-              1. Chi nhánh ({targetBranchIds.length}/{branches.length})
-            </Button>
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              type="button"
-              onClick={() => scrollToSection("panel-categories")}
-            >
-              2. Danh mục ({syncCategories ? selectedCategoryIds.length : 0}/{categories.length})
-            </Button>
-            <Button
-              variant="outline-primary"
-              size="sm"
-              type="button"
-              onClick={() => scrollToSection("panel-products")}
-            >
-              3. Món ăn & Bảng giá ({syncProducts ? selectedProductIds.length : 0}/{products.length})
-            </Button>
-            <Button
-              variant="outline-secondary"
-              size="sm"
-              type="button"
-              onClick={() => scrollToSection("panel-vouchers")}
-            >
-              4. Voucher ({syncVouchers ? selectedVoucherIds.length : 0}/{vouchers.length})
-            </Button>
-          </div> */}
-
           {/* ========================================================= */}
           {/* PANEL 1: CHI NHÁNH MỤC TIÊU */}
           {/* ========================================================= */}
