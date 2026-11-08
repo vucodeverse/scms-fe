@@ -14,6 +14,7 @@ import CategoryDetailPage from "./pages/menu/CategoryDetailPage.jsx";
 import CategoryEditPage from "./pages/menu/CategoryEditPage.jsx";
 import ToppingDetailPage from "./pages/menu/ToppingDetailPage.jsx";
 import ToppingEditPage from "./pages/menu/ToppingEditPage.jsx";
+import ChainSyncPage from "./pages/menu/ChainSyncPage.jsx";
 import KioskPage from "./pages/KioskPage.jsx";
 import RolesPage from "./pages/RolesPage.jsx";
 import SepaySettingsPage from "./pages/SepaySettingsPage.jsx";
@@ -209,6 +210,16 @@ export default function App() {
                   <RequireAuth>
                     <RequireRole roles={["COO"]}>
                       <ProductEditPage />
+                    </RequireRole>
+                  </RequireAuth>
+                ),
+              },
+              {
+                pattern: "/chain/menu/sync",
+                render: () => (
+                  <RequireAuth>
+                    <RequireRole roles={["COO"]}>
+                      <ChainSyncPage />
                     </RequireRole>
                   </RequireAuth>
                 ),

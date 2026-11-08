@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Tab, Tabs } from "react-bootstrap";
+import { Button, Tab, Tabs } from "react-bootstrap";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
@@ -17,7 +17,7 @@ import RecipeTab from "./menu/RecipeTab.jsx";
 export default function MenuPage() {
   const { user } = useAuth();
   const menu = buildMenu(user);
-  const { query } = useRouter();
+  const { query, navigate } = useRouter();
   const [activeTab, setActiveTab] = useState(() =>
     ["products", "categories", "toppings", "recipe"].includes(query.tab) ? query.tab : "products",
   );
@@ -34,6 +34,13 @@ export default function MenuPage() {
         title="Menu & BOM"
         screenCode={activeTab === "recipe" ? "SCR-11 · TAB-06" : "SCR-11 · TAB-05"}
         description="Quản trị danh mục, giá bán và công thức chuẩn toàn chuỗi."
+        actions={
+          user?.role === "COO" ? (
+            <Button variant="primary" onClick={() => navigate("/chain/menu/sync")}>
+              Đồng bộ xuống chi nhánh
+            </Button>
+          ) : null
+        }
       />
       <Tabs activeKey={activeTab} onSelect={setActiveTab} id="menu-tabs">
         <Tab eventKey="products" title="Sản phẩm & giá">

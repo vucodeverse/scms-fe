@@ -148,6 +148,11 @@ export default function OrdersPage() {
         title="Đơn hàng"
         screenCode="SCR-05 · Đơn hàng"
         description="Đơn bán tại quầy của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
+        actions={
+          <Button variant="primary" onClick={() => navigate("/pos")}>
+            Tạo đơn mới (POS)
+          </Button>
+        }
       />
       {loading && page.content.length === 0 ? (
         <div className="text-center py-5">
