@@ -509,7 +509,7 @@ export default function ChainSyncPage() {
                   id="toggle-sync-products"
                   checked={syncProducts}
                   onChange={(e) => setSyncProducts(e.target.checked)}
-                  label={<h2 className="d-inline ms-2 text-primary">3. Món ăn & Bảng giá theo size (Products & BOM)</h2>}
+                  label={<h2 className="d-inline ms-2 ">3. Món ăn & Bảng giá theo size (Products & BOM)</h2>}
                 />
                 <p className="mt-1 mb-0">
                   {syncProducts ? (
@@ -627,8 +627,8 @@ export default function ChainSyncPage() {
                                   <span
                                     key={s.id || s.size}
                                     className={`badge ${s.size === p.defaultSize
-                                        ? "bg-primary text-white"
-                                        : "bg-light text-dark border"
+                                      ? "bg-primary text-white"
+                                      : "bg-light text-dark border"
                                       }`}
                                     title={s.size === p.defaultSize ? "Size mặc định" : ""}
                                   >
