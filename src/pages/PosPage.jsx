@@ -58,13 +58,6 @@ export default function PosPage() {
   const [attBusy, setAttBusy] = useState(false);
   const [attMessage, setAttMessage] = useState(null);
 
-  // Tự động kết nối phiên quầy POS mặc định nếu chưa đăng nhập
-  useEffect(() => {
-    if (!tokenStore.hasSession() && !user) {
-      login("coo", "Admin@123", false).catch(() => {});
-    }
-  }, [user, login]);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {

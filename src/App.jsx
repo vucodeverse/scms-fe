@@ -48,7 +48,7 @@ function RootDispatch() {
 
   useEffect(() => {
     if (status === "authenticated" && user) navigate(landingPath({ user }));
-    else if (status === "anonymous") navigate("/login");
+    else if (status === "anonymous") navigate("/pos");
   }, [status, user, navigate]);
 
   return (
