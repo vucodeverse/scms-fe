@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Tab, Tabs } from "react-bootstrap";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -13,6 +13,8 @@ import ToppingsTab from "./menu/ToppingsTab.jsx";
 import RecipeTab from "./menu/RecipeTab.jsx";
 import IngredientsTab from "./menu/IngredientsTab.jsx";
 
+const VALID_TABS = ["products", "categories", "toppings", "recipe", "ingredients"];
+
 // SCR-11 — Menu chuỗi & Master Data. Gồm Sản phẩm + Danh mục (FE-07/FE-08),
 // Topping dùng chung (FE-09), Công thức BOM (FE-10) và Nguyên vật liệu.
 export default function MenuPage() {
@@ -20,8 +22,20 @@ export default function MenuPage() {
   const menu = buildMenu(user);
   const { query, navigate } = useRouter();
   const [activeTab, setActiveTab] = useState(() =>
-    ["products", "categories", "toppings", "recipe", "ingredients"].includes(query.tab) ? query.tab : "products",
+    VALID_TABS.includes(query?.tab) ? query.tab : "products",
   );
+
+  useEffect(() => {
+    if (query?.tab && VALID_TABS.includes(query.tab)) {
+      setActiveTab(query.tab);
+    }
+  }, [query?.tab]);
+
+  const handleSelectTab = (k) => {
+    if (!k) return;
+    setActiveTab(k);
+    navigate(k === "products" ? "/chain/menu" : `/chain/menu?tab=${k}`);
+  };
 
   return (
     <AdminLayout
@@ -43,7 +57,7 @@ export default function MenuPage() {
           ) : null
         }
       />
-      <Tabs activeKey={activeTab} onSelect={setActiveTab} id="menu-tabs">
+      <Tabs activeKey={activeTab} onSelect={handleSelectTab} id="menu-tabs">
         <Tab eventKey="products" title="Sản phẩm & giá">
           <div className="pt-3">
             <ProductsTab />
