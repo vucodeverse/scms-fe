@@ -39,6 +39,39 @@ import {
   ShowcaseTaskPage,
 } from "./showcase/ShowcasePage.jsx";
 import SessionShowcasePage from "./showcase/SessionShowcasePage.jsx";
+import BranchDashboardPage from "./pages/reports/BranchDashboardPage.jsx";
+import SalesReportPage from "./pages/reports/SalesReportPage.jsx";
+import CashFlowReportPage from "./pages/reports/CashFlowReportPage.jsx";
+import InventoryReportPage from "./pages/reports/InventoryReportPage.jsx";
+import HrShiftReportPage from "./pages/reports/HrShiftReportPage.jsx";
+import FinancialReportPage from "./pages/reports/FinancialReportPage.jsx";
+import ProductSalesReportPage from "./pages/reports/ProductSalesReportPage.jsx";
+import PeakHoursReportPage from "./pages/reports/PeakHoursReportPage.jsx";
+
+// Route báo cáo (UC34–UC42): quyền khớp @PreAuthorize của ReportController.
+function reportRoute(pattern, roles, Page) {
+  return {
+    pattern,
+    render: () => (
+      <RequireAuth>
+        <RequireRole roles={roles}>
+          <Page />
+        </RequireRole>
+      </RequireAuth>
+    ),
+  };
+}
+
+const MANAGERS = ["COO", "BRANCH_MANAGER"];
+const REPORT_ROUTES = [
+  reportRoute("/reports/sales", MANAGERS, SalesReportPage),
+  reportRoute("/reports/cash-flow", MANAGERS, CashFlowReportPage),
+  reportRoute("/reports/inventory", MANAGERS, InventoryReportPage),
+  reportRoute("/reports/hr-shifts", MANAGERS, HrShiftReportPage),
+  reportRoute("/reports/peak-hours", MANAGERS, PeakHoursReportPage),
+  reportRoute("/reports/financial", ["COO"], FinancialReportPage),
+  reportRoute("/reports/product-sales", ["COO"], ProductSalesReportPage),
+];
 
 // Điểm vào "/": đã đăng nhập -> trang đích theo vai trò (SCR-03);
 // chưa đăng nhập -> SCR-01 Đăng nhập.
@@ -80,10 +113,13 @@ export default function App() {
                 pattern: "/branch/overview",
                 render: () => (
                   <RequireAuth>
-                    <RoleHomePage title="Tổng quan chi nhánh" screenCode="SCR-07" />
+                    <RequireRole roles={MANAGERS}>
+                      <BranchDashboardPage />
+                    </RequireRole>
                   </RequireAuth>
                 ),
               },
+              ...REPORT_ROUTES,
               {
                 pattern: "/pos",
                 render: () => <PosPage />,
