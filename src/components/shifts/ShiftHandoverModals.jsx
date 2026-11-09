@@ -79,15 +79,18 @@ export function InitiateHandoverModal({
     if (employees.length > 0) {
       return employees
         .filter((e) => (!e.status || e.status === "ACTIVE") && e.id !== currentHolderId)
-        .filter((e) => e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER")
         .sort((a, b) => {
-          if (a.roleCode !== b.roleCode) return a.roleCode === "CASHIER" ? -1 : 1;
+          const aPriority = a.roleCode === "CASHIER" ? 1 : a.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+          const bPriority = b.roleCode === "CASHIER" ? 1 : b.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+          if (aPriority !== bPriority) return aPriority - bPriority;
           return (a.fullName || "").localeCompare(b.fullName || "", "vi");
         })
-        .map((e) => ({
-          id: e.id,
-          label: `${e.fullName} (${POSITION_LABELS[e.roleCode] || e.roleCode})`,
-        }));
+        .map((e) => {
+          const isOfficial = e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER";
+          const roleText = POSITION_LABELS[e.roleCode] || e.roleCode;
+          const label = isOfficial ? `${e.fullName} (${roleText})` : `${e.fullName} (${roleText} — Gán tạm Thu ngân)`;
+          return { id: e.id, label };
+        });
     }
     return cashierCandidates
       .filter((c) => c.employeeId !== currentHolderId)
@@ -406,10 +409,19 @@ export function AcceptHandoverModal({
     if (isCashier) return [];
     return employees
       .filter((e) => (!e.status || e.status === "ACTIVE") && e.id !== pending?.fromUserId && e.id !== currentUserId)
-      .filter((e) => e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER")
       .sort((a, b) => {
-        if (a.roleCode !== b.roleCode) return a.roleCode === "CASHIER" ? -1 : 1;
+        const aPriority = a.roleCode === "CASHIER" ? 1 : a.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+        const bPriority = b.roleCode === "CASHIER" ? 1 : b.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+        if (aPriority !== bPriority) return aPriority - bPriority;
         return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+      })
+      .map((e) => {
+        const isOfficial = e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER";
+        const roleText = POSITION_LABELS[e.roleCode] || e.roleCode;
+        return {
+          ...e,
+          displayLabel: isOfficial ? `${e.fullName} (${roleText})` : `${e.fullName} (${roleText} — Gán tạm Thu ngân)`,
+        };
       });
   }, [isCashier, employees, pending?.fromUserId, currentUserId]);
 
@@ -561,7 +573,7 @@ export function AcceptHandoverModal({
                 </option>
                 {managerAssignableUsers.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.fullName} ({POSITION_LABELS[emp.roleCode] || emp.roleCode})
+                    {emp.displayLabel || `${emp.fullName} (${POSITION_LABELS[emp.roleCode] || emp.roleCode})`}
                   </option>
                 ))}
               </Form.Select>

@@ -663,11 +663,20 @@ export default function ShiftOperationsTab({
                               {emp?.phone ? ` · ${emp.phone}` : ""}
                             </div>
                           </div>
-                          <StatusTag
-                            status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
-                            variant={checkedIn ? "success" : "neutral"}
-                            label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
-                          />
+                          <div className="d-flex align-items-center gap-1">
+                            {activeSchedule?.replacementEmployeeIds?.includes(empId) ? (
+                              <StatusTag
+                                status="REPLACEMENT"
+                                variant="warn"
+                                label="Nhân sự thay thế"
+                              />
+                            ) : null}
+                            <StatusTag
+                              status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
+                              variant={checkedIn ? "success" : "neutral"}
+                              label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
+                            />
+                          </div>
                         </div>
                       );
                     })}
