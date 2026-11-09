@@ -80,9 +80,25 @@ function expireSession() {
   window.dispatchEvent(new CustomEvent("scms:session-expired"));
 }
 
+// Lỗi của request tải file (responseType "blob") về dưới dạng Blob — đọc lại
+// thành JSON envelope để toApiError lấy được code/message của backend.
+async function unwrapBlobError(error) {
+  const data = error?.response?.data;
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    try {
+      error.response.data = JSON.parse(await data.text());
+    } catch {
+      error.response.data = {};
+    }
+  }
+}
+
 http.interceptors.response.use(
-  (response) => response.data?.data,
+  // `rawResponse: true` trong config: trả nguyên response (dùng khi tải file,
+  // cần header Content-Disposition và body nhị phân, không có envelope).
+  (response) => (response.config?.rawResponse ? response : response.data?.data),
   async (error) => {
+    await unwrapBlobError(error);
     const original = error?.config;
     const status = error?.response?.status;
     const url = original?.url || "";

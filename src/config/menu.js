@@ -14,6 +14,19 @@ export const APP_MENU = [
     ],
   },
   {
+    // UC35–UC42. `onlyRoles`: chỉ hiện cho các vai trò này (khớp @PreAuthorize backend).
+    group: "Báo cáo",
+    items: [
+      { key: "rpt-sales", label: "Doanh số", path: "/reports/sales", icon: "report", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "rpt-cash", label: "Dòng tiền két", path: "/reports/cash-flow", icon: "cash", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "rpt-inventory", label: "Xuất - nhập - tồn", path: "/reports/inventory", icon: "box", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "rpt-hr", label: "Nhân sự & ca", path: "/reports/hr-shifts", icon: "users", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "rpt-peak", label: "Giờ cao điểm", path: "/reports/peak-hours", icon: "clock", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "rpt-financial", label: "Tài chính hợp nhất", path: "/reports/financial", icon: "wallet", permission: PERMISSIONS.REPORT_VIEW, onlyRoles: ["COO"] },
+      { key: "rpt-products", label: "Sản phẩm bán chạy", path: "/reports/product-sales", icon: "tag", permission: PERMISSIONS.REPORT_VIEW, onlyRoles: ["COO"] },
+    ],
+  },
+  {
     group: "Master data",
     items: [
       { key: "branches", label: "Chi nhánh", path: "/chain/branches", icon: "branch", permission: PERMISSIONS.BRANCH_MANAGE },
@@ -48,9 +61,10 @@ export function buildMenu(user) {
     ...section,
     items: section.items.filter(
       (item) =>
-        !item.permission ||
-        permissions.includes(item.permission) ||
-        (Array.isArray(item.roles) && item.roles.includes(user.role))
+        (!Array.isArray(item.onlyRoles) || item.onlyRoles.includes(user.role)) &&
+        (!item.permission ||
+          permissions.includes(item.permission) ||
+          (Array.isArray(item.roles) && item.roles.includes(user.role)))
     ),
   })).filter((section) => section.items.length > 0);
 }
