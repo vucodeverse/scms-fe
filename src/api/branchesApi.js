@@ -2,7 +2,7 @@ import { http } from "./client.js";
 import { buildListParams, normalizePage } from "./paging.js";
 
 // API chi nhánh (UC05) — /api/v1/branches, chỉ COO.
-// Tạo mới dùng CreateBranchRequest (có code); sửa dùng
+// Tạo mới dùng CreateBranchRequest (có code, managerUserId tùy chọn); sửa dùng
 // SaveBranchRequest (không có code — mã read-only sau khi tạo).
 export const branchesApi = {
   async list({ uiPage = 1, size = 20, keyword, status, sortBy = "createdAt", sortDir = "DESC" } = {}) {
@@ -24,6 +24,9 @@ export const branchesApi = {
   },
   update(id, payload) {
     return http.put(`/branches/${id}`, payload);
+  },
+  assignManager(id, managerUserId) {
+    return http.put(`/branches/${id}/manager`, { managerUserId: managerUserId ?? null });
   },
   changeStatus(id, status) {
     return http.patch(`/branches/${id}/status`, { status });

@@ -28,7 +28,7 @@ function qty(v, unit) {
 // SCR-15 — Báo cáo xuất - nhập - tồn - hao hụt nguyên vật liệu kho (UC38).
 export default function InventoryReportPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(user?.branchId || null);
   const [period, setPeriod] = useState(initialPeriod("month"));
   const [view, setView] = useState("ALL");
@@ -36,7 +36,9 @@ export default function InventoryReportPage() {
   const needBranch = !isBranchUser && !branchId;
   const invalidRange = period.from > period.to;
   const params = { branchId: isBranchUser ? undefined : branchId, from: period.from, to: period.to };
-  const { data, loading, error, reload } = useReport(reportsApi.inventory, params, { enabled: !needBranch && !invalidRange });
+  const { data, loading, error, reload } = useReport(reportsApi.inventory, params, {
+    enabled: !unassignedManager && !needBranch && !invalidRange,
+  });
 
   const rows = useMemo(() => {
     const items = data?.items || [];

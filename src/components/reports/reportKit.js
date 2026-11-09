@@ -74,7 +74,8 @@ export function formatQty(value, digits = 2) {
 
 // Danh sách chi nhánh cho COO (BM có branchId cố định -> không tải).
 export function useBranchOptions(user) {
-  const isBranchUser = Boolean(user?.branchId);
+  const isBranchUser = user?.role !== "COO";
+  const unassignedManager = user?.role === "BRANCH_MANAGER" && !user?.branchId;
   const [branches, setBranches] = useState([]);
   useEffect(() => {
     if (isBranchUser) return;
@@ -87,7 +88,7 @@ export function useBranchOptions(user) {
       alive = false;
     };
   }, [isBranchUser]);
-  return { branches, isBranchUser };
+  return { branches, isBranchUser, unassignedManager };
 }
 
 // Tải báo cáo theo bộ lọc. `fetcher(params)` trả Promise; khi `enabled=false`

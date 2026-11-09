@@ -10,22 +10,12 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
 import { buildMenu } from "../config/menu.js";
+import { BRANCH_STATUS_LABELS, BRANCH_STATUS_VARIANTS } from "../config/userConstants.js";
 import { branchesApi } from "../api/branchesApi.js";
 
-const PAGE_SIZE = 20;
+export { BRANCH_STATUS_LABELS };
 
-export const BRANCH_STATUS_LABELS = {
-  OPEN: "Đang mở",
-  TEMP_CLOSED: "Tạm đóng",
-  MAINTENANCE: "Bảo trì",
-  INACTIVE: "Ngừng hoạt động",
-};
-const BRANCH_STATUS_VARIANTS = {
-  OPEN: "dark",
-  TEMP_CLOSED: "warn",
-  MAINTENANCE: "warn",
-  INACTIVE: "neutral",
-};
+const PAGE_SIZE = 20;
 
 const SORT_OPTIONS = [
   { value: "createdAt:DESC", label: "Mới nhất trước" },
@@ -33,13 +23,7 @@ const SORT_OPTIONS = [
   { value: "name:ASC", label: "Tên A–Z" },
 ];
 
-// SCR-13 — Chi nhánh & Manager (FE-05). Bố cục bám prototype
-// (views-chain branches): cột Mã/chi nhánh, Địa chỉ, Liên hệ,
-// Giờ mở, Số bàn, Quản lý, POS, Vận hành. Prototype còn cột doanh
-// thu hôm nay — backend chưa có API đơn hàng nên không hiển thị.
-// Danh sách không chứa nút thao tác (FE-13): bấm vào tên chi nhánh
-// để mở trang chi tiết /chain/branches/detail?id=, nơi đặt Sửa,
-// Đổi trạng thái và Xoá mềm. Thêm/Sửa là task screen edit(?id=).
+// SCR-13 — Chi nhánh & Manager (FE-05 / FE-13).
 export default function BranchesPage() {
   const { user } = useAuth();
   const { navigate } = useRouter();
@@ -157,9 +141,14 @@ export default function BranchesPage() {
         screenCode="SCR-13"
         description="Hồ sơ chi nhánh, quản lý phụ trách và trạng thái kết nối POS."
         actions={
-          <Button variant="primary" onClick={() => navigate("/chain/branches/edit")}>
-            Thêm chi nhánh
-          </Button>
+          <div className="d-flex gap-2">
+            <Button variant="outline-secondary" onClick={() => navigate("/chain/managers")}>
+              Tài khoản quản lý
+            </Button>
+            <Button variant="primary" onClick={() => navigate("/chain/branches/edit")}>
+              Thêm chi nhánh
+            </Button>
+          </div>
         }
       />
 

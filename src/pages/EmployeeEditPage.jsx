@@ -3,15 +3,16 @@ import { Button, Form, Spinner } from "react-bootstrap";
 import TaskLayout from "../layouts/TaskLayout.jsx";
 import FormField from "../components/FormField.jsx";
 import StatusTag from "../components/StatusTag.jsx";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
+import { isUnassignedBranchManager } from "../auth/landing.js";
+import { POSITION_LABELS, USER_STATUS_LABELS } from "../config/userConstants.js";
 import { usersApi } from "../api/usersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
-import { POSITION_LABELS } from "./EmployeesPage.jsx";
 
 const LOGIN_POSITIONS = ["COO", "BRANCH_MANAGER"];
-const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
 
 const EMPTY_FORM = () => ({
   fullName: "",
@@ -26,13 +27,6 @@ const EMPTY_FORM = () => ({
   status: "ACTIVE",
 });
 
-// SCR-09 · TAB-03 — Thêm/Sửa hồ sơ nhân viên dưới dạng task screen
-// mô phỏng employeeEdit của prototype: panel Thông tin cơ bản với
-// họ tên, SĐT, email, vai trò, tên đăng nhập, PIN 4 số, mã RFID,
-// trạng thái. Khác prototype theo backend: tài khoản đăng nhập chỉ
-// dành cho COO/Quản lý chi nhánh (nhân viên vận hành chỉ dùng
-// PIN/thẻ ở kiosk); đổi vai trò khi sửa là endpoint riêng chỉ COO
-// gọi được; không có field lương/giờ vì backend chưa lưu (issue #6).
 export default function EmployeeEditPage() {
   const { user } = useAuth();
   const { query, navigate } = useRouter();
@@ -41,9 +35,13 @@ export default function EmployeeEditPage() {
   toastRef.current = toast;
 
   const isCoo = user?.role === "COO";
+  const unassignedManager = isUnassignedBranchManager(user);
   const editingId = query.id ? Number(query.id) : null;
+  const presetBranchId = query.branchId ? String(query.branchId) : "";
+  const backPath =
+    query.returnTo || (presetBranchId ? `/branch/employees?branchId=${presetBranchId}` : "/branch/employees");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!unassignedManager);
   const [notFound, setNotFound] = useState(false);
   const [branches, setBranches] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -56,6 +54,10 @@ export default function EmployeeEditPage() {
   const [resetting, setResetting] = useState(false);
 
   const load = useCallback(async () => {
+    if (unassignedManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       if (isCoo) {
@@ -81,7 +83,7 @@ export default function EmployeeEditPage() {
       } else {
         setForm((f) => ({
           ...f,
-          branchId: isCoo ? "" : user?.branchId ? String(user.branchId) : "",
+          branchId: isCoo ? presetBranchId : user?.branchId ? String(user.branchId) : "",
         }));
       }
     } catch (err) {
@@ -90,15 +92,12 @@ export default function EmployeeEditPage() {
     } finally {
       setLoading(false);
     }
-  }, [editingId, isCoo, user?.branchId]);
+  }, [unassignedManager, editingId, isCoo, user?.branchId, presetBranchId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Khi sửa: tài khoản đã có username thì luôn gửi lại username kể cả
-  // khi vai trò đang được đổi sang nhóm vận hành (tránh xoá tài khoản
-  // đăng nhập); khi tạo mới thì dựa vào vai trò đã chọn.
   const isLoginPosition = editingId
     ? hasUsername || LOGIN_POSITIONS.includes(form.position)
     : LOGIN_POSITIONS.includes(form.position);
@@ -109,19 +108,23 @@ export default function EmployeeEditPage() {
     return BM_CREATABLE_ROLES.includes(value);
   });
 
+  const lockBranchEdit = Boolean(isCoo && editingId && originalPosition === "BRANCH_MANAGER");
+  const canHavePin = Boolean(form.branchId || (!isCoo && user?.branchId));
+
   async function submitForm(e) {
     e.preventDefault();
     if (saving) return;
     setFormError(null);
+    const resolvedBranchId = form.branchId ? Number(form.branchId) : isCoo ? null : user?.branchId || null;
     const payload = {
       fullName: form.fullName.trim(),
       phone: form.phone.trim(),
       email: form.email.trim() || null,
       position: editingId ? originalPosition : form.position,
-      branchId: form.branchId ? Number(form.branchId) : user?.branchId || null,
+      branchId: resolvedBranchId,
       username: isLoginPosition ? form.username.trim() || null : null,
       password: !editingId && isLoginPosition ? form.password || null : null,
-      pin: form.pin.trim() || null,
+      pin: resolvedBranchId && form.pin.trim() ? form.pin.trim() : null,
       cardCode: form.cardCode.trim() || null,
       hourlyRate: null,
       status: form.status,
@@ -135,7 +138,6 @@ export default function EmployeeEditPage() {
         const created = await usersApi.create(payload);
         savedId = created.id;
       }
-      // Đổi vai trò là endpoint riêng, chỉ COO (hiệu lực lần đăng nhập sau).
       if (editingId && isCoo && form.position !== originalPosition) {
         await usersApi.assignRole(editingId, form.position);
         toast.success("Đã gán vai trò mới — hiệu lực từ lần đăng nhập sau của nhân viên.");
@@ -143,7 +145,7 @@ export default function EmployeeEditPage() {
       toast.success(
         editingId ? `Đã lưu hồ sơ ${payload.fullName}.` : `Đã tạo hồ sơ ${payload.fullName}.`,
       );
-      navigate("/branch/employees");
+      navigate(backPath);
       return savedId;
     } catch (err) {
       setFormError(err);
@@ -170,9 +172,17 @@ export default function EmployeeEditPage() {
   const fe = (name) => formError?.fieldError?.(name) || null;
   const formMessage = formError && !formError.fieldErrors?.length ? formError.message : null;
 
+  if (unassignedManager) {
+    return (
+      <TaskLayout title="Hồ sơ nhân sự" screenCode="TAB-03" codeLabel="Hồ sơ nhân sự" backTo={backPath}>
+        <UnassignedManagerNotice />
+      </TaskLayout>
+    );
+  }
+
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy nhân viên" screenCode="TAB-03" codeLabel="Hồ sơ nhân sự" backTo="/branch/employees">
+      <TaskLayout title="Không tìm thấy nhân viên" screenCode="TAB-03" codeLabel="Hồ sơ nhân sự" backTo={backPath}>
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Hồ sơ không tồn tại hoặc nằm ngoài chi nhánh của bạn. Quay lại danh sách nhân sự.</span>
@@ -188,10 +198,10 @@ export default function EmployeeEditPage() {
       subtitle="Thông tin nhân sự, PIN chấm công và tài khoản đăng nhập."
       screenCode="TAB-03"
       codeLabel="Hồ sơ nhân sự"
-      backTo="/branch/employees"
+      backTo={backPath}
       meta={
         editingId ? (
-          <StatusTag status={form.status} label={STATUS_LABELS[form.status] || form.status} />
+          <StatusTag status={form.status} label={USER_STATUS_LABELS[form.status] || form.status} />
         ) : (
           <StatusTag status="DRAFT" label="Hồ sơ mới" />
         )
@@ -223,57 +233,64 @@ export default function EmployeeEditPage() {
               ) : null}
 
               <div className="form-grid">
-                <FormField label="Họ tên" required error={fe("fullName")} className="">
-                  <Form.Control
-                    value={form.fullName}
-                    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-                  />
+                <FormField label="Họ tên" required error={fe("fullName")}>
+                  <Form.Control value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
                 </FormField>
-                <FormField label="Số điện thoại" required error={fe("phone")} help="10–11 số, bắt đầu bằng 0." className="">
+                <FormField label="Số điện thoại" required error={fe("phone")} help="10–11 số, bắt đầu bằng 0.">
                   <Form.Control
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     placeholder="0xxxxxxxxx"
                   />
                 </FormField>
-                <FormField label="Email" error={fe("email")} className="">
+                <FormField label="Email" error={fe("email")}>
                   <Form.Control
                     type="email"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                   />
                 </FormField>
-                <FormField label="Vai trò" required error={fe("position")} className="">
+                <FormField label="Vai trò" required error={fe("position")}>
                   <Form.Select
                     value={form.position}
                     disabled={!!editingId && !isCoo}
                     onChange={(e) => setForm({ ...form, position: e.target.value })}
                   >
                     {roleOptions.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
+                      <option key={value} value={value}>{label}</option>
                     ))}
                   </Form.Select>
                 </FormField>
                 {isCoo ? (
-                  <FormField label="Chi nhánh" error={fe("branchId")} className="">
+                  <FormField
+                    label="Chi nhánh"
+                    required={!isLoginPosition}
+                    error={fe("branchId")}
+                    help={
+                      lockBranchEdit
+                        ? "Đổi chi nhánh của Quản lý thực hiện tại màn Chi nhánh."
+                        : form.position === "BRANCH_MANAGER"
+                          ? "Có thể để trống để tạo Quản lý chưa gán chi nhánh."
+                          : undefined
+                    }
+                  >
                     <Form.Select
                       value={form.branchId}
+                      disabled={lockBranchEdit}
                       onChange={(e) => setForm({ ...form, branchId: e.target.value })}
                     >
-                      <option value="">— Toàn chuỗi / chưa gán —</option>
+                      <option value="">
+                        {form.position === "BRANCH_MANAGER" ? "— Chưa gán chi nhánh —" : "— Chọn chi nhánh —"}
+                      </option>
                       {branches.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
+                        <option key={b.id} value={b.id}>{b.name}</option>
                       ))}
                     </Form.Select>
                   </FormField>
                 ) : null}
                 {isLoginPosition ? (
                   <>
-                    <FormField label="Tên đăng nhập" required={!editingId} error={fe("username")} className="">
+                    <FormField label="Tên đăng nhập" required={!editingId} error={fe("username")}>
                       <Form.Control
                         value={form.username}
                         disabled={!!editingId && hasUsername}
@@ -281,7 +298,7 @@ export default function EmployeeEditPage() {
                       />
                     </FormField>
                     {!editingId ? (
-                      <FormField label="Mật khẩu" required error={fe("password")} className="">
+                      <FormField label="Mật khẩu" required error={fe("password")}>
                         <Form.Control
                           type="password"
                           value={form.password}
@@ -294,26 +311,31 @@ export default function EmployeeEditPage() {
                 ) : null}
                 <FormField
                   label="PIN 4 số"
-                  required={!editingId}
+                  required={!editingId && !isLoginPosition}
                   error={fe("pin")}
-                  help={editingId ? "Để trống nếu giữ nguyên PIN hiện tại. PIN là duy nhất trong chi nhánh." : "Duy nhất trong chi nhánh."}
-                  className=""
+                  help={
+                    !canHavePin
+                      ? "Chỉ nhân sự thuộc chi nhánh mới dùng PIN."
+                      : editingId
+                        ? "Để trống nếu giữ nguyên PIN hiện tại. PIN là duy nhất trong chi nhánh."
+                        : isLoginPosition
+                          ? "Không bắt buộc với Quản lý; nếu nhập, PIN là duy nhất trong chi nhánh."
+                          : "Duy nhất trong chi nhánh."
+                  }
                 >
                   <Form.Control
                     value={form.pin}
                     maxLength={4}
                     inputMode="numeric"
+                    disabled={!canHavePin}
                     onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })}
                     placeholder={editingId ? "••••" : ""}
                   />
                 </FormField>
-                <FormField label="Mã RFID" error={fe("cardCode")} className="">
-                  <Form.Control
-                    value={form.cardCode}
-                    onChange={(e) => setForm({ ...form, cardCode: e.target.value })}
-                  />
+                <FormField label="Mã RFID" error={fe("cardCode")}>
+                  <Form.Control value={form.cardCode} onChange={(e) => setForm({ ...form, cardCode: e.target.value })} />
                 </FormField>
-                <FormField label="Trạng thái" error={fe("status")} className="">
+                <FormField label="Trạng thái" error={fe("status")}>
                   <Form.Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                     <option value="ACTIVE">Đang hoạt động</option>
                     <option value="INACTIVE">Ngừng hoạt động</option>
@@ -322,7 +344,7 @@ export default function EmployeeEditPage() {
               </div>
 
               <div className="form-actions">
-                <Button variant="outline-secondary" onClick={() => navigate("/branch/employees")} disabled={saving}>
+                <Button variant="outline-secondary" onClick={() => navigate(backPath)} disabled={saving}>
                   Hủy
                 </Button>
                 <Button variant="primary" type="submit" disabled={saving || !form.fullName.trim() || !form.phone.trim()}>

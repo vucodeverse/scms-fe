@@ -28,7 +28,7 @@ import {
 // chênh lệch = thực đếm − dự kiến (BR-38). Ca chưa đóng = chưa đối soát.
 export default function CashFlowReportPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(user?.branchId || null);
   const [period, setPeriod] = useState(initialPeriod("today"));
   const [expanded, setExpanded] = useState({});
@@ -36,7 +36,9 @@ export default function CashFlowReportPage() {
   const needBranch = !isBranchUser && !branchId;
   const invalidRange = period.from > period.to;
   const params = { branchId: isBranchUser ? undefined : branchId, from: period.from, to: period.to };
-  const { data, loading, error, reload } = useReport(reportsApi.cashFlow, params, { enabled: !needBranch && !invalidRange });
+  const { data, loading, error, reload } = useReport(reportsApi.cashFlow, params, {
+    enabled: !unassignedManager && !needBranch && !invalidRange,
+  });
   const s = data?.summary;
 
   return (

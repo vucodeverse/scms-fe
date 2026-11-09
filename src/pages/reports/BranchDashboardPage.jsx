@@ -65,11 +65,13 @@ function Line({ label, value, strong }) {
 // SCR-07 — Dashboard chi nhánh trong ngày (UC34).
 export default function BranchDashboardPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(user?.branchId || null);
   const needBranch = !isBranchUser && !branchId;
   const params = { branchId: isBranchUser ? undefined : branchId };
-  const { data, loading, error, reload } = useReport(reportsApi.dashboard, params, { enabled: !needBranch });
+  const { data, loading, error, reload } = useReport(reportsApi.dashboard, params, {
+    enabled: !unassignedManager && !needBranch,
+  });
 
   return (
     <ReportLayout

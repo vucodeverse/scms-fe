@@ -26,6 +26,10 @@ export function roleLabel(role) {
   return ROLE_LABELS[role] || role || "";
 }
 
+export function isUnassignedBranchManager(user) {
+  return Boolean(user && user.role === "BRANCH_MANAGER" && !user.branchId);
+}
+
 export function landingPath({ landing, user } = {}) {
   if (landing && LANDING_BY_SCREEN[landing]) return LANDING_BY_SCREEN[landing];
   if (user?.role && LANDING_BY_ROLE[user.role]) return LANDING_BY_ROLE[user.role];

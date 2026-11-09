@@ -30,7 +30,7 @@ import {
 // SCR-15 — Báo cáo doanh số chi nhánh theo ngày/tuần/tháng/năm (UC35) + xuất file (UC36).
 export default function SalesReportPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(user?.branchId || null);
   const [period, setPeriod] = useState(initialPeriod("week"));
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -43,7 +43,9 @@ export default function SalesReportPage() {
     to: period.to,
     paymentMethod: paymentMethod || undefined,
   };
-  const { data, loading, error, reload } = useReport(reportsApi.sales, params, { enabled: !needBranch && !invalidRange });
+  const { data, loading, error, reload } = useReport(reportsApi.sales, params, {
+    enabled: !unassignedManager && !needBranch && !invalidRange,
+  });
 
   const s = data?.summary;
   return (

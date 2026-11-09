@@ -8,7 +8,8 @@ import DataTable from "../components/DataTable.jsx";
 import StatusTag from "../components/StatusTag.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { roleLabel } from "../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { buildMenu } from "../config/menu.js";
 import { formatVnd } from "../lib/format.js";
 import { inventoryApi } from "../api/inventoryApi.js";
@@ -29,6 +30,7 @@ export default function InventoryPage() {
   const { user } = useAuth();
   const toast = useToast();
   const menu = buildMenu(user);
+  const unassignedManager = isUnassignedBranchManager(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -42,7 +44,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.branchId) {
+    if (user?.role === "COO" && !user?.branchId) {
       branchesApi
         .list({ uiPage: 1, size: 100 })
         .then((p) => {
@@ -54,7 +56,10 @@ export default function InventoryPage() {
   }, [user?.branchId]);
 
   const load = useCallback(async () => {
-    if (!branchId) return;
+    if (unassignedManager || !branchId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [stock, low] = await Promise.all([
@@ -175,6 +180,7 @@ export default function InventoryPage() {
         screenCode="SCR-14 · Kho"
         description="Tồn kho nguyên liệu của chi nhánh, cảnh báo sắp hết và các phiếu nhập / xuất / hủy, kiểm kê."
         actions={
+          unassignedManager ? null : (
           <div className="d-flex gap-2 flex-wrap">
             {!user?.branchId ? (
               <Form.Select
@@ -205,9 +211,13 @@ export default function InventoryPage() {
               Kiểm kê
             </Button>
           </div>
+          )
         }
       />
 
+      {unassignedManager ? (
+        <UnassignedManagerNotice />
+      ) : (
       <Tabs activeKey={tab} onSelect={(k) => setTab(k || "stock")} className="mb-3">
         <Tab eventKey="stock" title="Tồn kho">
           {loading && page.content.length === 0 ? (
@@ -236,6 +246,7 @@ export default function InventoryPage() {
           />
         </Tab>
       </Tabs>
+      )}
     </AdminLayout>
   );
 }

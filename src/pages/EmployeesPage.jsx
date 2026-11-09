@@ -6,53 +6,45 @@ import SessionHeaderRight from "../components/SessionHeader.jsx";
 import DataTable from "../components/DataTable.jsx";
 import StatusTag from "../components/StatusTag.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
-import { roleLabel } from "../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
 import { buildMenu } from "../config/menu.js";
+import { POSITION_LABELS, USER_STATUS_LABELS } from "../config/userConstants.js";
 import { usersApi } from "../api/usersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
 
+export { POSITION_LABELS };
+
 const PAGE_SIZE = 20;
 
-export const POSITION_LABELS = {
-  COO: "COO",
-  BRANCH_MANAGER: "Quản lý chi nhánh",
-  CASHIER: "Thu ngân",
-  BARISTA: "Pha chế",
-  WAITER: "Phục vụ",
-};
-
-const USER_STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
-
-// SCR-09 · TAB-03 — Hồ sơ nhân sự (FE-06). Bố cục bám prototype
-// (views-branch employees): toolbar có nhãn trong thẻ bảng (Tìm kiếm /
-// Vai trò / Trạng thái), cột Họ tên, SĐT, Vai trò, PIN/thẻ, Trạng thái.
-// Khác prototype theo dữ liệu backend: không có mã NV và backend
-// không trả PIN thật (chỉ hasPin) nên cột PIN hiển thị trạng thái cấp;
-// không có cột lương/giờ vì backend chưa lưu trường này (issue #6).
-// COO xem toàn chuỗi và lọc theo chi nhánh; BM bị khóa trong chi
-// nhánh của mình (backend trả 403 CROSS_BRANCH_DENIED nếu vượt).
 export default function EmployeesPage() {
   const { user } = useAuth();
-  const { navigate } = useRouter();
+  const { query, navigate } = useRouter();
   const toast = useToast();
   const menu = buildMenu(user);
   const isCoo = user?.role === "COO";
+  const unassignedManager = isUnassignedBranchManager(user);
 
   const [page, setPage] = useState({ items: [], totalPages: 0, totalItems: 0 });
   const [uiPage, setUiPage] = useState(1);
   const [keyword, setKeyword] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [branchFilter, setBranchFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState(() => (query.branchId ? String(query.branchId) : ""));
   const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [confirm, setConfirm] = useState(null); // { row, nextStatus }
+  const [loading, setLoading] = useState(!unassignedManager);
+  const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const toastRef = useRef(toast);
   toastRef.current = toast;
+
+  useEffect(() => {
+    setBranchFilter(query.branchId ? String(query.branchId) : "");
+    setUiPage(1);
+  }, [query.branchId]);
 
   useEffect(() => {
     if (!isCoo) return;
@@ -63,6 +55,10 @@ export default function EmployeesPage() {
   }, [isCoo]);
 
   const load = useCallback(async () => {
+    if (unassignedManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const result = await usersApi.list({
@@ -79,7 +75,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [uiPage, keyword, roleFilter, statusFilter, branchFilter, isCoo, user?.branchId]);
+  }, [unassignedManager, uiPage, keyword, roleFilter, statusFilter, branchFilter, isCoo, user?.branchId]);
 
   useEffect(() => {
     load();
@@ -116,7 +112,11 @@ export default function EmployeesPage() {
       ),
     },
     { key: "phone", header: "SĐT", render: (r) => r.phone || "—" },
-    { key: "branchName", header: "Chi nhánh", render: (r) => r.branchName || "—" },
+    {
+      key: "branchName",
+      header: "Chi nhánh",
+      render: (r) => r.branchName || (r.roleCode === "COO" || r.position === "COO" ? "Toàn chuỗi" : "Chưa gán"),
+    },
     {
       key: "role",
       header: "Vai trò",
@@ -145,18 +145,22 @@ export default function EmployeesPage() {
       width: 190,
       render: (r) => (
         <div className="d-flex gap-1">
-          <Button size="sm" variant="outline-secondary" onClick={() => navigate(`/branch/employees/edit?id=${r.id}`)}>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            onClick={() =>
+              navigate(`/branch/employees/edit?id=${r.id}${branchFilter ? `&branchId=${branchFilter}` : ""}`)
+            }
+          >
             Sửa hồ sơ
           </Button>
-          {r.status === "ACTIVE" ? (
-            <Button size="sm" variant="outline-secondary" onClick={() => setConfirm({ row: r, nextStatus: "INACTIVE" })}>
-              Ngừng
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline-secondary" onClick={() => setConfirm({ row: r, nextStatus: "ACTIVE" })}>
-              Kích hoạt
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            onClick={() => setConfirm({ row: r, nextStatus: r.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" })}
+          >
+            {r.status === "ACTIVE" ? "Ngừng" : "Kích hoạt"}
+          </Button>
         </div>
       ),
     },
@@ -168,6 +172,8 @@ export default function EmployeesPage() {
       {control}
     </div>
   );
+
+  const addHref = `/branch/employees/edit${branchFilter ? `?branchId=${branchFilter}` : ""}`;
 
   return (
     <AdminLayout
@@ -182,87 +188,93 @@ export default function EmployeesPage() {
         screenCode="SCR-09 · TAB-03"
         description="Quản lý hồ sơ, vai trò, PIN và thẻ RFID của nhân viên tại chi nhánh."
         actions={
-          <Button variant="primary" onClick={() => navigate("/branch/employees/edit")}>
-            Thêm nhân viên
-          </Button>
+          unassignedManager ? null : (
+            <Button variant="primary" onClick={() => navigate(addHref)}>
+              Thêm nhân viên
+            </Button>
+          )
         }
       />
 
-      <DataTable
-        columns={columns}
-        rows={page.items}
-        rowKey={(r) => r.id}
-        loading={loading}
-        emptyMessage="Không có nhân viên nào khớp bộ lọc."
-        pagination={{ page: uiPage, totalPages: page.totalPages, onChange: setUiPage }}
-        toolbar={
-          <div className="d-flex gap-2 align-items-end flex-wrap w-100">
-            {labeledField(
-              "Tìm kiếm",
-              <Form.Control
-                type="search"
-                placeholder="Họ tên, số điện thoại…"
-                value={keyword}
-                onChange={(e) => {
-                  setKeyword(e.target.value);
-                  setUiPage(1);
-                }}
-              />,
-              true,
-            )}
-            {isCoo
-              ? labeledField(
-                  "Chi nhánh",
-                  <Form.Select
-                    value={branchFilter}
-                    onChange={(e) => {
-                      setBranchFilter(e.target.value);
-                      setUiPage(1);
-                    }}
-                  >
-                    <option value="">Tất cả chi nhánh</option>
-                    {branches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </Form.Select>,
-                )
-              : null}
-            {labeledField(
-              "Vai trò",
-              <Form.Select
-                value={roleFilter}
-                onChange={(e) => {
-                  setRoleFilter(e.target.value);
-                  setUiPage(1);
-                }}
-              >
-                <option value="">Tất cả</option>
-                {Object.entries(POSITION_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Form.Select>,
-            )}
-            {labeledField(
-              "Trạng thái",
-              <Form.Select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setUiPage(1);
-                }}
-              >
-                <option value="">Tất cả</option>
-                <option value="ACTIVE">Đang hoạt động</option>
-                <option value="INACTIVE">Ngừng hoạt động</option>
-              </Form.Select>,
-            )}
-          </div>
-        }
-      />
+      {unassignedManager ? (
+        <UnassignedManagerNotice />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={page.items}
+          rowKey={(r) => r.id}
+          loading={loading}
+          emptyMessage="Không có nhân viên nào khớp bộ lọc."
+          pagination={{ page: uiPage, totalPages: page.totalPages, onChange: setUiPage }}
+          toolbar={
+            <div className="d-flex gap-2 align-items-end flex-wrap w-100">
+              {labeledField(
+                "Tìm kiếm",
+                <Form.Control
+                  type="search"
+                  placeholder="Họ tên, số điện thoại…"
+                  value={keyword}
+                  onChange={(e) => {
+                    setKeyword(e.target.value);
+                    setUiPage(1);
+                  }}
+                />,
+                true,
+              )}
+              {isCoo
+                ? labeledField(
+                    "Chi nhánh",
+                    <Form.Select
+                      value={branchFilter}
+                      onChange={(e) => {
+                        setBranchFilter(e.target.value);
+                        setUiPage(1);
+                      }}
+                    >
+                      <option value="">Tất cả chi nhánh</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </Form.Select>,
+                  )
+                : null}
+              {labeledField(
+                "Vai trò",
+                <Form.Select
+                  value={roleFilter}
+                  onChange={(e) => {
+                    setRoleFilter(e.target.value);
+                    setUiPage(1);
+                  }}
+                >
+                  <option value="">Tất cả</option>
+                  {Object.entries(POSITION_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Form.Select>,
+              )}
+              {labeledField(
+                "Trạng thái",
+                <Form.Select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setUiPage(1);
+                  }}
+                >
+                  <option value="">Tất cả</option>
+                  <option value="ACTIVE">Đang hoạt động</option>
+                  <option value="INACTIVE">Ngừng hoạt động</option>
+                </Form.Select>,
+              )}
+            </div>
+          }
+        />
+      )}
 
       <ConfirmDialog
         show={!!confirm}
@@ -274,8 +286,10 @@ export default function EmployeesPage() {
             </>
           ) : (
             <>
-              Ngừng hoạt động hồ sơ của <strong>{confirm?.row.fullName}</strong>? Nhân viên sẽ không đăng
-              nhập hay chấm công được cho tới khi được kích hoạt lại.
+              Ngừng hoạt động hồ sơ của <strong>{confirm?.row.fullName}</strong>?
+              {confirm?.row.roleCode === "BRANCH_MANAGER"
+                ? " Tài khoản Quản lý cũng sẽ tự động gỡ khỏi chi nhánh."
+                : " Nhân viên sẽ không đăng nhập hay chấm công được cho tới khi được kích hoạt lại."}
             </>
           )
         }

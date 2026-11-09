@@ -5,7 +5,7 @@ import PageHeader from "../PageHeader.jsx";
 import SessionHeaderRight from "../SessionHeader.jsx";
 import Icon from "../Icon.jsx";
 import { useAuth } from "../../auth/AuthContext.jsx";
-import { roleLabel } from "../../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../../auth/landing.js";
 import { buildMenu } from "../../config/menu.js";
 import { useToast } from "../ToastContext.jsx";
 import { reportsApi } from "../../api/reportsApi.js";
@@ -152,6 +152,14 @@ export function ExportButton({ type, params, disabled }) {
 
 // Trạng thái chung: lỗi / đang tải / chưa chọn chi nhánh / rỗng.
 export function ReportState({ loading, error, data, needBranch, emptyMessage, onRetry, children }) {
+  const { user } = useAuth();
+  if (isUnassignedBranchManager(user)) {
+    return (
+      <Notice icon="branch">
+        Tài khoản Quản lý của bạn chưa được gắn vào chi nhánh nào. Vui lòng liên hệ COO để được phân công.
+      </Notice>
+    );
+  }
   if (needBranch) return <Notice icon="branch">Chọn chi nhánh để xem báo cáo.</Notice>;
   if (error) {
     return (

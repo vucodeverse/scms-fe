@@ -22,13 +22,15 @@ import { formatQty, useBranchOptions, useReport, initialPeriod } from "../../com
 // COO bỏ trống chi nhánh = toàn chuỗi; BM chỉ xem chi nhánh mình.
 export default function PeakHoursReportPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(null);
   const [period, setPeriod] = useState(initialPeriod("week"));
 
   const invalidRange = period.from > period.to;
   const params = { branchId: isBranchUser ? undefined : branchId, from: period.from, to: period.to };
-  const { data, loading, error, reload } = useReport(reportsApi.peakHours, params, { enabled: !invalidRange });
+  const { data, loading, error, reload } = useReport(reportsApi.peakHours, params, {
+    enabled: !unassignedManager && !invalidRange,
+  });
   const peaks = (data?.slots || []).filter((s) => s.peak);
 
   return (

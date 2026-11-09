@@ -314,7 +314,7 @@ export default function RolesPage() {
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
                       {emp.fullName} · {POSITION_LABELS[emp.roleCode] || emp.roleCode} ·{" "}
-                      {emp.branchName || "Toàn chuỗi"}
+                      {emp.branchName || (emp.roleCode === "COO" ? "Toàn chuỗi" : "Chưa gán")}
                     </option>
                   ))}
                 </Form.Select>

@@ -6,9 +6,10 @@ import PageHeader from "../components/PageHeader.jsx";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
 import DataTable from "../components/DataTable.jsx";
 import StatusTag from "../components/StatusTag.jsx";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { roleLabel } from "../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
 import { buildMenu, POS_MENU } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
@@ -33,14 +34,12 @@ function dayEndIso(dateStr) {
   return new Date(`${dateStr}T23:59:59`).toISOString();
 }
 
-// SCR-05 — Danh sách đơn hàng của chi nhánh (FE-17, UC18). Hàng không
-// mang cụm nút thao tác: bấm vào số hóa đơn để mở trang chi tiết đơn,
-// nơi chứa thanh toán/hủy đơn (chuẩn FE-13).
 export default function OrdersPage() {
   const { navigate } = useRouter();
   const { user } = useAuth();
   const toast = useToast();
   const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
+  const unassignedManager = isUnassignedBranchManager(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -57,16 +56,15 @@ export default function OrdersPage() {
   const [toDate, setToDate] = useState("");
   const [uiPage, setUiPage] = useState(1);
   const [page, setPage] = useState({ content: [], totalPages: 0, totalElements: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!unassignedManager);
 
-  // Tải danh sách chi nhánh nếu chưa đăng nhập hoặc là COO
   useEffect(() => {
-    if (!user?.branchId) {
+    if (!unassignedManager && !user?.branchId) {
       branchesApi.list({ uiPage: 1, size: 100 })
         .then((res) => setBranches(res.items || []))
         .catch(() => {});
     }
-  }, [user?.branchId]);
+  }, [unassignedManager, user?.branchId]);
 
   const branchMap = useMemo(() => {
     const map = {};
@@ -77,6 +75,10 @@ export default function OrdersPage() {
   const effectiveBranchId = user?.branchId || (selectedBranchId ? Number(selectedBranchId) : undefined);
 
   const load = useCallback(async () => {
+    if (unassignedManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await ordersApi.list({
@@ -94,7 +96,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranchId, status, keyword, fromDate, toDate, uiPage]);
+  }, [unassignedManager, effectiveBranchId, status, keyword, fromDate, toDate, uiPage]);
 
   useEffect(() => {
     load();
@@ -202,12 +204,16 @@ export default function OrdersPage() {
         screenCode="SCR-05 · Đơn hàng"
         description="Đơn bán tại quầy của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
         actions={
-          <Button variant="primary" onClick={() => navigate("/pos")}>
-            + Tạo đơn mới (POS)
-          </Button>
+          unassignedManager ? null : (
+            <Button variant="primary" onClick={() => navigate("/pos")}>
+              + Tạo đơn mới (POS)
+            </Button>
+          )
         }
       />
-      {loading && page.content.length === 0 ? (
+      {unassignedManager ? (
+        <UnassignedManagerNotice />
+      ) : loading && page.content.length === 0 ? (
         <div className="text-center py-5">
           <Spinner className="me-2" /> Đang tải…
         </div>

@@ -24,14 +24,16 @@ function count(n) {
 // Không chứa lương (BR-47). Năng suất chỉ áp dụng cho thu ngân.
 export default function HrShiftReportPage() {
   const { user } = useAuth();
-  const { branches, isBranchUser } = useBranchOptions(user);
+  const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
   const [branchId, setBranchId] = useState(user?.branchId || null);
   const [period, setPeriod] = useState(initialPeriod("week"));
 
   const needBranch = !isBranchUser && !branchId;
   const invalidRange = period.from > period.to;
   const params = { branchId: isBranchUser ? undefined : branchId, from: period.from, to: period.to };
-  const { data, loading, error, reload } = useReport(reportsApi.hrShifts, params, { enabled: !needBranch && !invalidRange });
+  const { data, loading, error, reload } = useReport(reportsApi.hrShifts, params, {
+    enabled: !unassignedManager && !needBranch && !invalidRange,
+  });
   const s = data?.summary;
 
   return (

@@ -5,7 +5,8 @@ import FormField from "../components/FormField.jsx";
 import StatusTag from "../components/StatusTag.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { roleLabel } from "../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { inventoryApi } from "../api/inventoryApi.js";
 import { fmtQty } from "./InventoryPage.jsx";
@@ -21,11 +22,12 @@ const ROUND_TYPES = [
 // tồn kho và trả kết quả chênh lệch.
 export default function StocktakePage() {
   const { user } = useAuth();
+  const unassignedManager = isUnassignedBranchManager(user);
   const toast = useToast();
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!unassignedManager);
   const [session, setSession] = useState(null);
   const [counts, setCounts] = useState({});
   const [createForm, setCreateForm] = useState({ roundType: "DAILY_CLOSING", witnessName: "", notes: "" });
@@ -34,6 +36,10 @@ export default function StocktakePage() {
   const [result, setResult] = useState(null);
 
   const load = useCallback(async () => {
+    if (unassignedManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const active = await inventoryApi.getActiveStocktake();
@@ -53,7 +59,7 @@ export default function StocktakePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [unassignedManager]);
 
   useEffect(() => {
     load();
@@ -116,7 +122,9 @@ export default function StocktakePage() {
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}
     >
-      {loading ? (
+      {unassignedManager ? (
+        <UnassignedManagerNotice />
+      ) : loading ? (
         <div className="text-center py-5">
           <Spinner className="me-2" /> Đang tải…
         </div>
