@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
 import Icon from "./Icon.jsx";
+import SecurityAlertBell from "./SecurityAlertBell.jsx";
 
 // Khối góc phải top rail theo prototype: đồng hồ trực tiếp + avatar
 // chữ cái đầu (nền accent-soft) + nút Đăng xuất.
@@ -35,6 +36,7 @@ export default function SessionHeaderRight() {
 
   return (
     <>
+      <SecurityAlertBell />
       <span className="topbar__clock">
         <Icon name="clock" size={14} />
         {clock}

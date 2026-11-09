@@ -6,19 +6,27 @@ import { tokenStore } from "./tokenStore.js";
 // Hợp đồng backend scms-be:
 // - Mọi response bọc envelope { code, data, message, traceId } — client bóc
 //   sẵn, tầng trên chỉ nhận `data`.
-// - Lỗi trả cùng envelope + danh sách lỗi theo field (fieldErrors[]) — client
-//   chuẩn hoá thành ApiError { status, code, message, fieldErrors, traceId }.
+// - Lỗi trả cùng envelope + detailCode + danh sách lỗi theo field (fieldErrors[]) —
+//   client chuẩn hoá thành ApiError { status, code, detailCode, message, fieldErrors, traceId }.
 // - Access token hết hạn (30 phút) -> 401: client tự gọi /auth/refresh MỘT
 //   lần (single-flight, các request khác xếp hàng), ghi đè refresh token mới
 //   vì backend xoay vòng token; refresh thất bại -> xoá phiên + phát sự kiện
 //   "scms:session-expired" để AuthContext đưa người dùng về trang đăng nhập.
 
 export class ApiError extends Error {
-  constructor({ status = 0, code = "NETWORK_ERROR", message = "Không kết nối được tới máy chủ.", fieldErrors = [], traceId = null }) {
+  constructor({
+    status = 0,
+    code = "NETWORK_ERROR",
+    detailCode = null,
+    message = "Không kết nối được tới máy chủ.",
+    fieldErrors = [],
+    traceId = null,
+  }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.detailCode = detailCode;
     this.fieldErrors = fieldErrors; // [{ field, code, message }]
     this.traceId = traceId;
   }
@@ -39,6 +47,7 @@ function toApiError(error) {
   return new ApiError({
     status: response.status,
     code: body.code || `HTTP_${response.status}`,
+    detailCode: body.detailCode || null,
     message: body.message || "Đã xảy ra lỗi khi xử lý yêu cầu.",
     fieldErrors: Array.isArray(body.fieldErrors) ? body.fieldErrors : Array.isArray(body.errors) ? body.errors : [],
     traceId: body.traceId || null,
@@ -102,7 +111,10 @@ http.interceptors.response.use(
     const original = error?.config;
     const status = error?.response?.status;
     const url = original?.url || "";
-    const isAuthCall = url.includes("/auth/refresh") || url.includes("/auth/login");
+    const isAuthCall =
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/login") ||
+      url.includes("/auth/pin-login");
     if (status === 401 && original && !original._retried && !isAuthCall && tokenStore.getRefreshToken()) {
       original._retried = true;
       try {

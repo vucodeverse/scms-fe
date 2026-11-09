@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Col, Row } from "react-bootstrap";
 import KpiStrip from "../../components/KpiStrip.jsx";
 import StatusTag from "../../components/StatusTag.jsx";
+import SecurityAlertsPanel from "../../components/SecurityAlertsPanel.jsx";
 import { RouteLink } from "../../router/HashRouter.jsx";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { reportsApi } from "../../api/reportsApi.js";
@@ -62,7 +63,7 @@ function Line({ label, value, strong }) {
   );
 }
 
-// SCR-07 — Dashboard chi nhánh trong ngày (UC34).
+// SCR-07 — Dashboard chi nhánh trong ngày (UC34) + Cảnh báo bảo mật PIN.
 export default function BranchDashboardPage() {
   const { user } = useAuth();
   const { branches, isBranchUser, unassignedManager } = useBranchOptions(user);
@@ -87,6 +88,9 @@ export default function BranchDashboardPage() {
         {!isBranchUser ? <BranchSelect branches={branches} value={branchId} onChange={setBranchId} /> : null}
       </FilterBar>
 
+      {!unassignedManager && !needBranch ? (
+        <SecurityAlertsPanel branchId={isBranchUser ? undefined : branchId} />
+      ) : null}
       <ReportState loading={loading} error={error} data={data} needBranch={needBranch} onRetry={reload}>
         {data ? <DashboardBody data={data} reload={reload} /> : null}
       </ReportState>

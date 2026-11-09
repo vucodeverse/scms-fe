@@ -8,6 +8,7 @@ export const APP_MENU = [
   {
     group: "Vận hành",
     items: [
+      { key: "shifts", label: "Ca & phân ca", path: "/branch/shifts", icon: "clock", permission: PERMISSIONS.SHIFT_MANAGE, roles: ["COO", "BRANCH_MANAGER"] },
       { key: "inventory", label: "Kho", path: "/branch/inventory", icon: "inventory", permission: PERMISSIONS.INVENTORY_MANAGE },
       { key: "branch-overview", label: "Tổng quan chi nhánh", path: "/branch/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
       { key: "chain-overview", label: "Tổng quan chuỗi", path: "/chain/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
@@ -33,7 +34,6 @@ export const APP_MENU = [
       { key: "managers", label: "Tài khoản quản lý", path: "/chain/managers", icon: "user", permission: PERMISSIONS.MANAGER_MANAGE },
       { key: "employees", label: "Nhân viên", path: "/branch/employees", icon: "users", permission: PERMISSIONS.EMPLOYEE_MANAGE, roles: ["COO", "BRANCH_MANAGER"] },
       { key: "menu", label: "Menu & BOM", path: "/chain/menu", icon: "menu", permission: PERMISSIONS.MENU_MANAGE },
-      { key: "ingredients", label: "Nguyên vật liệu", path: "/chain/menu?tab=ingredients", icon: "box", permission: PERMISSIONS.MENU_MANAGE },
       { key: "chain-sync", label: "Đồng bộ chuỗi", path: "/chain/menu/sync", icon: "sync", permission: PERMISSIONS.SYNC_PUBLISH },
       { key: "vouchers", label: "Khuyến mãi & voucher", path: "/chain/vouchers", icon: "tag", permission: PERMISSIONS.VOUCHER_MANAGE },
       { key: "roles", label: "Vai trò & phân quyền", path: "/settings/roles", icon: "settings", permission: PERMISSIONS.ROLE_ASSIGN },
@@ -42,13 +42,14 @@ export const APP_MENU = [
   },
 ];
 
-// Menu dành riêng cho quầy POS (chỉ gồm các chức năng bán hàng, tra cứu đơn tại quầy, chấm công)
+// Menu dành riêng cho quầy POS (chỉ gồm các chức năng bán hàng, tra cứu đơn tại quầy, ca két, chấm công)
 export const POS_MENU = [
   {
     group: "Quầy bán hàng",
     items: [
       { key: "pos", label: "Gọi món (POS)", path: "/pos", icon: "pos" },
       { key: "orders", label: "Đơn hàng tại quầy", path: "/branch/orders", icon: "orders" },
+      { key: "shifts", label: "Ca & két tiền", path: "/branch/shifts", icon: "cash" },
       { key: "kiosk", label: "Chấm công (Kiosk)", path: "/kiosk", icon: "clock" },
     ],
   },

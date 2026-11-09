@@ -18,9 +18,20 @@ import { categoriesApi } from "../api/categoriesApi.js";
 import { branchesApi } from "../api/branchesApi.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { attendanceApi } from "../api/attendanceApi.js";
-import { tokenStore } from "../api/tokenStore.js";
+import { shiftsApi } from "../api/shiftsApi.js";
+import { SHIFT_TYPE_META } from "../components/shifts/shiftUtils.js";
+
 
 const LEVELS = ["0%", "30%", "50%", "70%", "100%"];
+
+function formatLockRemaining(untilIso, nowMs) {
+  if (!untilIso) return null;
+  const diffSec = Math.ceil((new Date(untilIso).getTime() - nowMs) / 1000);
+  if (diffSec <= 0) return null;
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 // SCR-04/05 — POS bán hàng tại quầy (FE-17, UC16–UC19/UC43). Bố cục
 // bám prototype views-pos: lưới món bên trái, panel "Đơn hiện tại"
@@ -29,7 +40,7 @@ const LEVELS = ["0%", "30%", "50%", "70%", "100%"];
 // mà chưa trả tiền vẫn ở trạng thái PENDING trong danh sách đơn hàng
 // (đơn chờ) — mở lại từ trang Đơn hàng để thanh toán tiếp.
 export default function PosPage() {
-  const { user, login } = useAuth();
+  const { user } = useAuth();
   const { navigate } = useRouter();
   const toast = useToast();
   // Màn POS chỉ hiển thị các chức năng của quầy POS (Gọi món, Đơn quầy, Chấm công)
@@ -62,6 +73,8 @@ export default function PosPage() {
   const [attPin, setAttPin] = useState("");
   const [attBusy, setAttBusy] = useState(false);
   const [attMessage, setAttMessage] = useState(null);
+  const [attNowMs, setAttNowMs] = useState(() => Date.now());
+  const attExpiredReloadRef = useRef(null);
 
   // Trạng thái modal Công thức pha chế (Barista BOM)
   const [recipeModalProduct, setRecipeModalProduct] = useState(null);
@@ -69,6 +82,28 @@ export default function PosPage() {
   const [recipeData, setRecipeData] = useState(null);
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [recipeError, setRecipeError] = useState(null);
+  const [shiftBanner, setShiftBanner] = useState(null);
+
+  const checkShiftStatus = useCallback(async (targetBranchId) => {
+    if (!user || !targetBranchId) {
+      setShiftBanner(null);
+      return;
+    }
+    try {
+      const sum = await shiftsApi.current(targetBranchId);
+      setShiftBanner({ open: true, shift: sum.shift, cashBalance: sum.currentCashBalance });
+    } catch (err) {
+      if (err?.detailCode === "SHIFT_NOT_OPEN") {
+        setShiftBanner({ open: false });
+      } else {
+        setShiftBanner(null);
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    checkShiftStatus(branchId);
+  }, [checkShiftStatus, branchId]);
 
   const openRecipeModal = (prod, defaultSz) => {
     if (!prod) return;
@@ -132,15 +167,38 @@ export default function PosPage() {
     load();
   }, [load]);
 
-  const loadAttendanceEmployees = useCallback(async (bId) => {
+  const loadAttendanceEmployees = useCallback(async (bId, { preserveMessage = false } = {}) => {
     if (!bId) return;
     setLoadingAttEmployees(true);
-    setAttMessage(null);
+
+
+
+
+    if (!preserveMessage) {
+      setAttMessage(null);
+  
+    }
+
+
+
     try {
-      const list = await attendanceApi.kioskEmployees(bId);
-      setAttEmployees(list || []);
-      if (list && list.length > 0) {
-        setSelectedEmpId((cur) => cur || String(list[0].employeeId));
+      const raw = await attendanceApi.kioskEmployees(bId);
+      const list = [...(Array.isArray(raw) ? raw : [])].sort((a, b) => {
+        const aOk = Boolean(a.hasAssignedShift);
+        const bOk = Boolean(b.hasAssignedShift);
+        if (aOk !== bOk) return aOk ? -1 : 1;
+        return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+      });
+      setAttEmployees(list);
+      if (list.length > 0) {
+        const preferred = list.find((e) => e.hasAssignedShift) || list[0];
+        setSelectedEmpId((cur) =>
+          list.some((e) => String(e.employeeId) === String(cur))
+            ? cur
+            : String(preferred.employeeId),
+        );
+      } else {
+        setSelectedEmpId("");
       }
     } catch (err) {
       setAttMessage({ type: "error", text: err.message || "Không tải được danh sách nhân sự." });
@@ -152,24 +210,78 @@ export default function PosPage() {
   useEffect(() => {
     if (showAttendanceModal) {
       loadAttendanceEmployees(branchId || 1);
-      setAttPin("");
       setAttMessage(null);
+      setAttPin("");
+  
     }
   }, [showAttendanceModal, branchId, loadAttendanceEmployees]);
 
+  const selectedAttEmp = useMemo(
+    () => attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId)) || null,
+    [attEmployees, selectedEmpId],
+  );
+  const attLockRemaining = selectedAttEmp?.pinLocked
+    ? formatLockRemaining(selectedAttEmp.pinLockedUntil, attNowMs)
+    : null;
+  const attPinLocked = Boolean(selectedAttEmp?.pinLocked && attLockRemaining);
+  const attHasAnyLocked = attEmployees.some((e) => e.pinLocked);
+
+  useEffect(() => {
+    if (!showAttendanceModal || !attHasAnyLocked) return undefined;
+    setAttNowMs(Date.now());
+    const tick = setInterval(() => setAttNowMs(Date.now()), 1000);
+    const poll = setInterval(() => {
+      loadAttendanceEmployees(branchId || 1, { preserveMessage: true });
+    }, 10000);
+    return () => {
+      clearInterval(tick);
+      clearInterval(poll);
+    };
+  }, [showAttendanceModal, attHasAnyLocked, branchId, loadAttendanceEmployees]);
+
+  useEffect(() => {
+    if (!showAttendanceModal || !selectedAttEmp?.pinLocked || !selectedAttEmp?.pinLockedUntil) return;
+    if (attLockRemaining) return;
+    const key = `${selectedAttEmp.employeeId}:${selectedAttEmp.pinLockedUntil}`;
+    if (attExpiredReloadRef.current === key) return;
+    attExpiredReloadRef.current = key;
+    loadAttendanceEmployees(branchId || 1, { preserveMessage: true });
+  }, [showAttendanceModal, selectedAttEmp, attLockRemaining, branchId, loadAttendanceEmployees]);
+
   async function handleAttendanceSubmit(e) {
     e?.preventDefault();
-    if (!selectedEmpId || !attPin.trim() || attBusy) return;
+    if (!selectedEmpId || attBusy) return;
     const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
     if (!emp) return;
+    if (attPinLocked) {
+      setAttMessage({
+        type: "error",
+        text: `Mã PIN của ${emp.fullName} đang tạm khóa (còn ${attLockRemaining}). Liên hệ Quản lý chi nhánh / COO để mở khóa sớm.`,
+      });
+      setAttPin("");
+      return;
+    }
+    if (!emp.hasAssignedShift) {
+      setAttMessage({
+        type: "error",
+        text: `${emp.fullName} chưa được phân công ca làm việc phù hợp hôm nay nên không thể chấm công.`,
+      });
+      return;
+    }
+    const cleanPin = attPin.trim();
+    if (cleanPin.length !== 4) {
+      setAttMessage({ type: "error", text: "Mã PIN cá nhân phải gồm đúng 4 chữ số." });
+      return;
+    }
 
     setAttBusy(true);
     setAttMessage(null);
+
     const targetBranch = branchId || 1;
     const payload = {
       branchId: targetBranch,
       employeeId: Number(selectedEmpId),
-      pin: attPin.trim(),
+      pin: cleanPin,
     };
 
     try {
@@ -185,6 +297,8 @@ export default function PosPage() {
       await loadAttendanceEmployees(targetBranch);
     } catch (err) {
       setAttMessage({ type: "error", text: err.message || "Mã PIN không đúng hoặc đã xảy ra lỗi." });
+      setAttPin("");
+      await loadAttendanceEmployees(targetBranch, { preserveMessage: true });
     } finally {
       setAttBusy(false);
     }
@@ -367,7 +481,54 @@ export default function PosPage() {
           <Spinner className="me-2" /> Đang tải…
         </div>
       ) : (
-        <div className="grid-2" style={{ gridTemplateColumns: "1fr 400px", alignItems: "start" }}>
+        <>
+          {!user ? (
+            <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
+              <span>
+                <strong>Quầy POS chưa mở khóa Thu ngân:</strong> Mở khóa bằng PIN 4 số để kiểm két đầu ca (so với kết ca cũ), mở ca hoặc chốt tiền mặt cuối ca.
+              </span>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
+              >
+                Kiểm két / Mở khóa Thu ngân (PIN) →
+              </Button>
+            </div>
+          ) : null}
+          {shiftBanner ? (
+            shiftBanner.open ? (
+              <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
+                <span>
+                  <strong>Ca đang mở:</strong>{" "}
+                  {SHIFT_TYPE_META[shiftBanner.shift?.shiftType]?.label || shiftBanner.shift?.shiftType} #
+                  {shiftBanner.shift?.id} · Két hiện tại:{" "}
+                  <strong>{formatVnd(shiftBanner.cashBalance)}</strong>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
+                >
+                  Quản lý ca &amp; két →
+                </Button>
+              </div>
+            ) : (
+              <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+                <span>
+                  <strong>Chi nhánh chưa mở ca bán hàng:</strong> Cần mở ca &amp; khai báo tiền đầu ca (BR-36) trước khi thu tiền tại quầy.
+                </span>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
+                >
+                  Mở ca &amp; két tiền →
+                </Button>
+              </div>
+            )
+          ) : null}
+          <div className="grid-2" style={{ gridTemplateColumns: "1fr 400px", alignItems: "start" }}>
           {/* Menu món */}
           <div>
             <div className="d-flex gap-2 flex-wrap mb-3 align-items-center">
@@ -623,7 +784,13 @@ export default function PosPage() {
                     </div>
                   ))}
                 </div>
-                <OrderPaymentPanel order={order} onOrderChanged={setOrder} />
+                <OrderPaymentPanel
+                  order={order}
+                  onOrderChanged={(nextOrder) => {
+                    setOrder(nextOrder);
+                    checkShiftStatus(branchId);
+                  }}
+                />
                 <div className="d-flex gap-2 mt-3">
                   <Button variant="outline-secondary" onClick={resetAll}>
                     {order.status === "PENDING" ? "Để đơn chờ & làm đơn mới" : "Đơn mới"}
@@ -632,7 +799,8 @@ export default function PosPage() {
               </>
             )}
           </div>
-        </div>
+          </div>
+        </>
       )}
 
       {/* Modal Check in / Check out ngay trên quầy POS */}
@@ -674,12 +842,14 @@ export default function PosPage() {
                     onChange={(e) => {
                       setSelectedEmpId(e.target.value);
                       setAttMessage(null);
+                      setAttPin("");
+                  
                     }}
                     disabled={attBusy}
                   >
                     {attEmployees.map((e) => (
                       <option key={e.employeeId} value={e.employeeId}>
-                        {e.fullName} ({e.role}) — {e.isCheckedIn ? "🟢 Đang trong ca" : "⚪ Chưa vào ca"}
+                        {e.fullName} ({e.role}) — {e.hasAssignedShift ? e.shiftLabel || "Đã gán ca" : "Chưa gán ca"} · {e.isCheckedIn ? "Trong ca" : "Chưa vào ca"}{e.pinLocked ? " (Tạm khóa PIN)" : ""}
                       </option>
                     ))}
                   </Form.Select>
@@ -689,29 +859,70 @@ export default function PosPage() {
                   const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
                   if (!emp) return null;
                   return (
-                    <div
-                      className="d-flex align-items-center justify-content-between p-2 rounded mb-3"
-                      style={{ background: "var(--paper-2)" }}
-                    >
-                      <span className="small text-muted-scms">Trạng thái hiện tại:</span>
-                      <StatusTag
-                        status={emp.isCheckedIn ? "CHECKED_IN" : "DRAFT"}
-                        label={emp.isCheckedIn ? "Đang trong ca làm việc" : "Chưa vào ca"}
-                        variant={emp.isCheckedIn ? "dark" : "neutral"}
-                      />
-                    </div>
+                    <>
+                      <div
+                        className="d-flex align-items-center justify-content-between flex-wrap gap-2 p-2 rounded mb-2"
+                        style={{ background: "var(--paper-2)" }}
+                      >
+                        <span className="small text-muted-scms">
+                          {emp.hasAssignedShift ? `Ca: ${emp.shiftLabel}` : "Phân công ca:"}
+                        </span>
+                        <div className="d-flex gap-1 align-items-center flex-wrap">
+                          {attPinLocked ? (
+                            <StatusTag status="PIN_LOCKED" variant="warn" label={`Khóa PIN · ${attLockRemaining}`} />
+                          ) : null}
+                          <StatusTag
+                            status={emp.hasAssignedShift ? emp.shiftStatus || "SCHEDULED" : "UNASSIGNED"}
+                            label={emp.hasAssignedShift ? "Đã gán ca" : "Chưa gán ca"}
+                            variant={emp.hasAssignedShift ? "success" : "warn"}
+                          />
+                          <StatusTag
+                            status={emp.isCheckedIn ? "CHECKED_IN" : "DRAFT"}
+                            label={emp.isCheckedIn ? "Đang trong ca" : "Chưa vào ca"}
+                            variant={emp.isCheckedIn ? "dark" : "neutral"}
+                          />
+                        </div>
+                      </div>
+                      {attPinLocked ? (
+                        <div className="notice notice--warn mb-3">
+                          <strong>!</strong>
+                          <div className="flex-grow-1">
+                            <div>
+                              Mã PIN của <strong>{emp.fullName}</strong> đang tạm khóa (còn{" "}
+                              <strong className="mono">{attLockRemaining}</strong>) do nhập sai quá 3 lần. Liên hệ Quản lý chi nhánh hoặc COO để mở khóa sớm.
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline-secondary"
+                              className="mt-2"
+                              onClick={() => loadAttendanceEmployees(branchId || 1, { preserveMessage: true })}
+                              disabled={loadingAttEmployees}
+                            >
+                              Kiểm tra lại trạng thái mở khóa
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {!emp.hasAssignedShift ? (
+                        <div className="notice notice--warn mb-3">
+                          <strong>!</strong>
+                          <span>Chỉ nhân viên đã được phân công ca làm việc hôm nay mới check-in / check-out được.</span>
+                        </div>
+                      ) : null}
+                    </>
                   );
                 })()}
 
                 <FormField label="Mã PIN cá nhân (4 số)" required className="mb-2">
                   <Form.Control
                     type="password"
-                    maxLength={6}
+                    maxLength={4}
+                    inputMode="numeric"
                     autoFocus
                     placeholder="••••"
                     value={attPin}
-                    onChange={(e) => setAttPin(e.target.value)}
-                    disabled={attBusy}
+                    onChange={(e) => setAttPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    disabled={attBusy || !selectedAttEmp?.hasAssignedShift || attPinLocked}
                     style={{ fontSize: 18, letterSpacing: 4, textAlign: "center" }}
                   />
                 </FormField>
@@ -747,7 +958,7 @@ export default function PosPage() {
                   <Button
                     variant={isOut ? "outline-danger" : "primary"}
                     type="submit"
-                    disabled={attBusy || !attPin.trim() || !selectedEmpId}
+                    disabled={attBusy || !emp?.hasAssignedShift || attPinLocked || attPin.trim().length !== 4 || !selectedEmpId}
                   >
                     {attBusy ? <Spinner size="sm" className="me-2" /> : null}
                     {isOut ? "Check Out (Tan ca)" : "Check In (Vào ca)"}

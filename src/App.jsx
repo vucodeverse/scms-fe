@@ -24,6 +24,7 @@ import StockSlipPage from "./pages/StockSlipPage.jsx";
 import StocktakePage from "./pages/StocktakePage.jsx";
 import OrdersPage from "./pages/OrdersPage.jsx";
 import OrderDetailPage from "./pages/OrderDetailPage.jsx";
+import ShiftsPage from "./pages/ShiftsPage.jsx";
 import EmployeesPage from "./pages/EmployeesPage.jsx";
 import EmployeeEditPage from "./pages/EmployeeEditPage.jsx";
 import BranchesPage from "./pages/BranchesPage.jsx";
@@ -124,6 +125,10 @@ export default function App() {
               {
                 pattern: "/pos",
                 render: () => <PosPage />,
+              },
+              {
+                pattern: "/branch/shifts",
+                render: () => <ShiftsPage />,
               },
               {
                 pattern: "/branch/inventory/slip",

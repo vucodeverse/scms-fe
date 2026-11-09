@@ -37,7 +37,7 @@ const PERMISSION_META = {
   PAYROLL_APPROVE: ["Nhân sự & ca", "Duyệt lương"],
   INVENTORY_MANAGE: ["Kho & tiền", "Quản lý kho"],
   STOCK_APPROVE: ["Kho & tiền", "Duyệt kho"],
-  CASH_IN_OUT: ["Kho & tiền", "Thu / chi tiền mặt"],
+  CASH_IN_OUT: ["Kho & tiền", "Nạp / rút tiền mặt két"],
   CASH_APPROVE: ["Kho & tiền", "Duyệt thu / chi"],
   REPORT_VIEW: ["Báo cáo", "Xem báo cáo"],
 };

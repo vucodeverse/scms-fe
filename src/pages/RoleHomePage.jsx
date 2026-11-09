@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import { roleLabel } from "../auth/landing.js";
 import { buildMenu } from "../config/menu.js";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
+import SecurityAlertsPanel from "../components/SecurityAlertsPanel.jsx";
 import Icon from "../components/Icon.jsx";
 
 // Trang đích sau đăng nhập theo vai trò (landing SCR-10 / SCR-07 / SCR-04).
@@ -25,6 +26,7 @@ export default function RoleHomePage({ title, screenCode }) {
       userRole={roleLabel(user?.role)}
     >
       <PageHeader title={title} screenCode={screenCode} description={`Xin chào ${user?.fullName || ""}. Chọn chức năng để bắt đầu làm việc.`} />
+      {(user?.role === "COO" || user?.role === "BRANCH_MANAGER") ? <SecurityAlertsPanel /> : null}
       {menu.length === 0 ? (
         <div className="scms-panel p-4">
           <p className="mb-0 text-muted-scms">

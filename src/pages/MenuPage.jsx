@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Tab, Tabs } from "react-bootstrap";
 import AdminLayout from "../layouts/AdminLayout.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -11,31 +11,16 @@ import CategoriesTab from "./menu/CategoriesTab.jsx";
 import ProductsTab from "./menu/ProductsTab.jsx";
 import ToppingsTab from "./menu/ToppingsTab.jsx";
 import RecipeTab from "./menu/RecipeTab.jsx";
-import IngredientsTab from "./menu/IngredientsTab.jsx";
 
-const VALID_TABS = ["products", "categories", "toppings", "recipe", "ingredients"];
-
-// SCR-11 — Menu chuỗi & Master Data. Gồm Sản phẩm + Danh mục (FE-07/FE-08),
-// Topping dùng chung (FE-09), Công thức BOM (FE-10) và Nguyên vật liệu.
+// SCR-11 — Menu chuỗi. TAB-05 gồm Sản phẩm + Danh mục (FE-07/FE-08)
+// và Topping dùng chung (FE-09); TAB-06 Công thức (FE-10, chỉ đọc).
 export default function MenuPage() {
   const { user } = useAuth();
   const menu = buildMenu(user);
   const { query, navigate } = useRouter();
   const [activeTab, setActiveTab] = useState(() =>
-    VALID_TABS.includes(query?.tab) ? query.tab : "products",
+    ["products", "categories", "toppings", "recipe"].includes(query.tab) ? query.tab : "products",
   );
-
-  useEffect(() => {
-    if (query?.tab && VALID_TABS.includes(query.tab)) {
-      setActiveTab(query.tab);
-    }
-  }, [query?.tab]);
-
-  const handleSelectTab = (k) => {
-    if (!k) return;
-    setActiveTab(k);
-    navigate(k === "products" ? "/chain/menu" : `/chain/menu?tab=${k}`);
-  };
 
   return (
     <AdminLayout
@@ -47,8 +32,8 @@ export default function MenuPage() {
     >
       <PageHeader
         title="Menu & BOM"
-        screenCode={activeTab === "recipe" ? "SCR-11 · TAB-06" : activeTab === "ingredients" ? "SCR-11 · TAB-07" : "SCR-11 · TAB-05"}
-        description="Quản trị danh mục, giá bán, công thức và nguyên vật liệu chuẩn toàn chuỗi."
+        screenCode={activeTab === "recipe" ? "SCR-11 · TAB-06" : "SCR-11 · TAB-05"}
+        description="Quản trị danh mục, giá bán và công thức chuẩn toàn chuỗi."
         actions={
           user?.role === "COO" ? (
             <Button variant="primary" onClick={() => navigate("/chain/menu/sync")}>
@@ -57,7 +42,7 @@ export default function MenuPage() {
           ) : null
         }
       />
-      <Tabs activeKey={activeTab} onSelect={handleSelectTab} id="menu-tabs">
+      <Tabs activeKey={activeTab} onSelect={setActiveTab} id="menu-tabs">
         <Tab eventKey="products" title="Sản phẩm & giá">
           <div className="pt-3">
             <ProductsTab />
@@ -76,11 +61,6 @@ export default function MenuPage() {
         <Tab eventKey="recipe" title="Công thức (BOM)">
           <div className="pt-3">
             <RecipeTab />
-          </div>
-        </Tab>
-        <Tab eventKey="ingredients" title="Nguyên vật liệu">
-          <div className="pt-3">
-            <IngredientsTab />
           </div>
         </Tab>
       </Tabs>

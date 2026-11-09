@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Spinner } from "react-bootstrap";
 import Icon from "../components/Icon.jsx";
 import StatusTag from "../components/StatusTag.jsx";
@@ -8,15 +8,33 @@ import { formatTime } from "../lib/format.js";
 import { POSITION_LABELS } from "./EmployeesPage.jsx";
 
 const BRANCH_KEY = "scms.kioskBranchId";
+const PIN_LENGTH = 4;
 const NUMPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "OK"];
+
+function sortKioskEmployees(items) {
+  return [...items].sort((a, b) => {
+    const aAssigned = Boolean(a.hasAssignedShift);
+    const bAssigned = Boolean(b.hasAssignedShift);
+    if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
+    return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+  });
+}
+
+function formatLockRemaining(untilIso, nowMs) {
+  if (!untilIso) return null;
+  const diffSec = Math.ceil((new Date(untilIso).getTime() - nowMs) / 1000);
+  if (diffSec <= 0) return null;
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
 
 // SCR-02 — Kiosk chấm công (FE-04), mô phỏng views-auth kiosk của
 // prototype: panel trái mực với đồng hồ lớn + đầu đọc thẻ, panel
-// phải chọn nhân viên, hiển thị PIN dạng chấm, numpad cảm ứng và
-// banner kết quả. Nhân viên đang trong ca thì OK = check-out, chưa
-// vào ca thì OK = check-in (đúng hành vi prototype). Kiosk không
-// đăng nhập; chi nhánh được thiết lập một lần (query ?branchId=
-// hoặc nhập tại máy) và lưu ở localStorage của máy kiosk.
+// phải chọn nhân viên, hiển thị PIN 4 chấm, numpad cảm ứng và
+// banner kết quả. Chỉ nhân viên đã được phân công ca phù hợp mới
+// check-in / check-out được (BR phân ca). Kiosk không đăng nhập;
+// chi nhánh được thiết lập một lần (query ?branchId= hoặc nhập tại máy).
 export default function KioskPage() {
   const { query, navigate } = useRouter();
 
@@ -31,6 +49,7 @@ export default function KioskPage() {
   });
   const [branchInput, setBranchInput] = useState("");
   const [employees, setEmployees] = useState([]);
+  const [onlyAssigned, setOnlyAssigned] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [employeeError, setEmployeeError] = useState(null);
   const [selectedId, setSelectedId] = useState("");
@@ -52,13 +71,14 @@ export default function KioskPage() {
     setEmployeeError(null);
     try {
       const list = await attendanceApi.kioskEmployees(branch);
-      const items = Array.isArray(list) ? list : [];
+      const items = sortKioskEmployees(Array.isArray(list) ? list : []);
       setEmployees(items);
+      const preferred = items.find((e) => e.hasAssignedShift) || items[0] || null;
       setSelectedId((prev) =>
         items.some((e) => String(e.employeeId) === String(prev))
           ? prev
-          : items[0]
-            ? String(items[0].employeeId)
+          : preferred
+            ? String(preferred.employeeId)
             : "",
       );
     } catch (err) {
@@ -73,7 +93,51 @@ export default function KioskPage() {
     if (branchId) loadEmployees(branchId);
   }, [branchId, loadEmployees]);
 
-  const selected = employees.find((e) => String(e.employeeId) === String(selectedId)) || null;
+  const displayedEmployees = useMemo(
+    () => (onlyAssigned ? employees.filter((e) => e.hasAssignedShift) : employees),
+    [employees, onlyAssigned],
+  );
+
+  useEffect(() => {
+    if (displayedEmployees.length === 0) {
+      if (selectedId) setSelectedId("");
+      return;
+    }
+    if (!displayedEmployees.some((e) => String(e.employeeId) === String(selectedId))) {
+      setSelectedId(String(displayedEmployees[0].employeeId));
+      setPin("");
+    }
+  }, [displayedEmployees, selectedId]);
+
+  const assignedCount = useMemo(
+    () => employees.filter((e) => e.hasAssignedShift).length,
+    [employees],
+  );
+
+  const selected =
+    displayedEmployees.find((e) => String(e.employeeId) === String(selectedId)) || null;
+
+  const lockRemaining = selected?.pinLocked ? formatLockRemaining(selected.pinLockedUntil, now.getTime()) : null;
+  const isPinLocked = Boolean(selected?.pinLocked && lockRemaining);
+  const canAttend = Boolean(selected?.hasAssignedShift) && !isPinLocked;
+
+  const hasAnyLockedEmployee = employees.some((e) => e.pinLocked);
+  const expiredReloadRef = useRef(null);
+
+  useEffect(() => {
+    if (!branchId || !hasAnyLockedEmployee) return undefined;
+    const t = setInterval(() => loadEmployees(branchId), 10000);
+    return () => clearInterval(t);
+  }, [branchId, hasAnyLockedEmployee, loadEmployees]);
+
+  useEffect(() => {
+    if (!branchId || !selected?.pinLocked || !selected?.pinLockedUntil) return;
+    if (lockRemaining) return;
+    const key = `${selected.employeeId}:${selected.pinLockedUntil}`;
+    if (expiredReloadRef.current === key) return;
+    expiredReloadRef.current = key;
+    loadEmployees(branchId);
+  }, [branchId, selected, lockRemaining, loadEmployees]);
 
   const showResult = useCallback((r) => {
     setResult(r);
@@ -101,17 +165,41 @@ export default function KioskPage() {
   }
 
   async function submitPin() {
-    if (!selected || busy || pin.length < 4) {
-      if (selected && pin.length < 4) {
-        showResult({
-          kind: "error",
-          title: "PIN chưa đủ 4 chữ số",
-          lines: [
-            ["Nhân viên", selected.fullName],
-            ["Vui lòng", "Nhập đủ ít nhất 4 số"],
-          ],
-        });
-      }
+    if (!selected || busy) return;
+    if (isPinLocked) {
+      showResult({
+        kind: "error",
+        title: "PIN đang bị tạm khóa",
+        lines: [
+          ["Nhân viên", selected.fullName],
+          ["Còn lại", lockRemaining || "Đang chờ mở khóa"],
+          ["Hướng dẫn", "Liên hệ Quản lý chi nhánh / COO để mở khóa sớm."],
+        ],
+      });
+      setPin("");
+      return;
+    }
+    if (!selected.hasAssignedShift) {
+      showResult({
+        kind: "error",
+        title: "Chưa được phân công ca",
+        lines: [
+          ["Nhân viên", selected.fullName],
+          ["Lý do", "Chỉ nhân viên đã được gán ca làm việc mới check-in / check-out được."],
+        ],
+      });
+      setPin("");
+      return;
+    }
+    if (pin.length < PIN_LENGTH) {
+      showResult({
+        kind: "error",
+        title: "PIN chưa đủ 4 chữ số",
+        lines: [
+          ["Nhân viên", selected.fullName],
+          ["Vui lòng", "Nhập đủ 4 chữ số PIN cá nhân"],
+        ],
+      });
       return;
     }
     setBusy(true);
@@ -139,13 +227,14 @@ export default function KioskPage() {
     } catch (err) {
       showResult({
         kind: "error",
-        title: "Không chấm công được",
+        title: err.code === "PIN_LOCKED" ? "PIN đã bị tạm khóa" : "Không chấm công được",
         lines: [
           ["Nhân viên", selected.fullName],
           ["Lý do", err.message || "Đã xảy ra lỗi."],
         ],
       });
       setPin("");
+      await loadEmployees(branchId);
     } finally {
       setBusy(false);
     }
@@ -178,7 +267,7 @@ export default function KioskPage() {
       showResult({
         kind: "error",
         title: "Không đọc được thẻ",
-        lines: [["Lý do", err.message || "Thẻ không hợp lệ ở chi nhánh này."]],
+        lines: [["Lý do", err.message || "Thẻ không hợp lệ hoặc nhân viên chưa được gán ca."]],
       });
     } finally {
       setBusy(false);
@@ -186,7 +275,7 @@ export default function KioskPage() {
   }
 
   function pressKey(key) {
-    if (busy) return;
+    if (busy || !canAttend) return;
     if (key === "C") {
       setPin("");
       return;
@@ -195,7 +284,7 @@ export default function KioskPage() {
       submitPin();
       return;
     }
-    setPin((p) => (p.length < 6 ? p + key : p));
+    setPin((p) => (p.length < PIN_LENGTH ? p + key : p));
   }
 
   const dateLine = now.toLocaleDateString("vi-VN", {
@@ -248,7 +337,7 @@ export default function KioskPage() {
             <span className="kiosk-reader__dot" />
             Đầu đọc RFID/QR sẵn sàng
           </div>
-          <p>Quẹt thẻ nhân viên hoặc nhập PIN 4 số để chấm công.</p>
+          <p>Quẹt thẻ nhân viên hoặc nhập PIN 4 số để chấm công (yêu cầu đã phân ca).</p>
           <Form onSubmit={submitCard}>
             <Form.Control
               value={cardCode}
@@ -275,7 +364,7 @@ export default function KioskPage() {
             SCR-02 <b>ATTENDANCE KIOSK</b>
           </div>
           <h1>Chấm công ca làm</h1>
-          <p>Chọn nhân viên, nhập PIN và xác nhận check-in/check-out.</p>
+          <p>Chọn nhân viên đã phân ca, nhập PIN 4 số và xác nhận check-in/check-out.</p>
 
           {!branchId ? (
             <div>
@@ -301,53 +390,123 @@ export default function KioskPage() {
           ) : (
             <>
               <Form.Group className="mb-2">
-                <Form.Label>Nhân viên</Form.Label>
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1">
+                  <Form.Label className="mb-0">
+                    Nhân viên ({assignedCount}/{employees.length} đã gán ca)
+                  </Form.Label>
+                  <Form.Check
+                    type="switch"
+                    id="kiosk-only-assigned"
+                    label="Chỉ hiện người có ca"
+                    checked={onlyAssigned}
+                    onChange={(e) => setOnlyAssigned(e.target.checked)}
+                    className="small mb-0"
+                    disabled={loadingEmployees || employees.length === 0}
+                  />
+                </div>
                 <Form.Select
                   size="lg"
                   value={selectedId}
-                  disabled={loadingEmployees || employees.length === 0}
+                  disabled={loadingEmployees || displayedEmployees.length === 0}
                   onChange={(e) => {
                     setSelectedId(e.target.value);
                     setPin("");
                     setResult(null);
                   }}
                 >
-                  {employees.map((e) => (
-                    <option key={e.employeeId} value={e.employeeId}>
-                      {e.fullName} · {POSITION_LABELS[e.role] || e.role}
+                  {displayedEmployees.length === 0 ? (
+                    <option value="">
+                      {onlyAssigned
+                        ? "Chưa có nhân viên nào được phân ca hôm nay"
+                        : "Chưa có nhân viên ở chi nhánh này"}
                     </option>
-                  ))}
+                  ) : (
+                    displayedEmployees.map((e) => (
+                      <option key={e.employeeId} value={e.employeeId}>
+                        {e.fullName} · {POSITION_LABELS[e.role] || e.role} —{" "}
+                        {e.hasAssignedShift ? e.shiftLabel || "Đã gán ca" : "Chưa gán ca"}
+                        {e.pinLocked ? " (Tạm khóa PIN)" : ""}
+                      </option>
+                    ))
+                  )}
                 </Form.Select>
                 <Form.Text className="text-muted">
                   {employeeError
                     ? employeeError
                     : selected
-                      ? `${selected.fullName} · Chi nhánh #${branchId}`
+                      ? `${selected.fullName} · Chi nhánh #${branchId}${selected.shiftLabel ? ` · ${selected.shiftLabel}` : ""}`
                       : loadingEmployees
                         ? "Đang tải danh sách…"
-                        : "Chưa có nhân viên ở chi nhánh này."}
+                        : onlyAssigned
+                          ? "Chưa có nhân viên nào được phân ca phù hợp."
+                          : "Chưa có nhân viên ở chi nhánh này."}
                 </Form.Text>
               </Form.Group>
 
-              <div className="d-flex justify-content-between align-items-center mt-2">
+              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
                 <span className="small text-muted">
                   {selected
-                    ? selected.isCheckedIn
-                      ? "Đang trong ca — OK để check-out"
-                      : "Chưa vào ca — OK để check-in"
+                    ? isPinLocked
+                      ? `PIN đang tạm khóa (còn ${lockRemaining})`
+                      : !selected.hasAssignedShift
+                        ? "Không có phân công ca phù hợp"
+                        : selected.isCheckedIn
+                          ? "Đang trong ca — OK để check-out"
+                          : "Chưa vào ca — OK để check-in"
                     : ""}
                 </span>
                 {selected ? (
-                  selected.isCheckedIn ? (
-                    <StatusTag status="ACTIVE" label="Trong ca" />
-                  ) : (
-                    <StatusTag status="INACTIVE" label="Chưa vào ca" />
-                  )
+                  <div className="d-flex align-items-center gap-1 flex-wrap">
+                    {selected.hasAssignedShift ? (
+                      <StatusTag
+                        status={selected.shiftStatus || "SCHEDULED"}
+                        variant={selected.shiftStatus === "OPEN" ? "success" : "neutral"}
+                        label={selected.shiftStatus === "OPEN" ? "Ca đang mở" : selected.shiftStatus === "CLOSED" ? "Ca vừa đóng" : "Đã phân ca"}
+                      />
+                    ) : (
+                      <StatusTag status="UNASSIGNED" variant="warn" label="Chưa gán ca" />
+                    )}
+                    {isPinLocked ? (
+                      <StatusTag status="PIN_LOCKED" variant="warn" label={`Khóa PIN · ${lockRemaining}`} />
+                    ) : null}
+                    <StatusTag
+                      status={selected.isCheckedIn ? "ACTIVE" : "INACTIVE"}
+                      label={selected.isCheckedIn ? "Trong ca" : "Chưa vào ca"}
+                    />
+                  </div>
                 ) : null}
               </div>
 
-              <div className="pin-display" aria-label="PIN đã nhập">
-                {[0, 1, 2, 3, 4, 5].map((i) => (
+              {selected && isPinLocked ? (
+                <div className="notice notice--warn mt-2 mb-1">
+                  <strong>!</strong>
+                  <div className="flex-grow-1">
+                    <div>
+                      Mã PIN của <strong>{selected.fullName}</strong> đang bị tạm khóa (còn{" "}
+                      <strong className="mono">{lockRemaining}</strong>) do nhập sai quá 3 lần. Liên hệ Quản lý chi nhánh hoặc COO để mở khóa sớm.
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline-secondary"
+                      className="mt-2"
+                      onClick={() => loadEmployees(branchId)}
+                      disabled={loadingEmployees}
+                    >
+                      Kiểm tra lại trạng thái mở khóa
+                    </Button>
+                  </div>
+                </div>
+              ) : selected && !selected.hasAssignedShift ? (
+                <div className="notice notice--warn mt-2 mb-1">
+                  <strong>!</strong>
+                  <span>
+                    {selected.fullName} chưa được phân công ca làm việc phù hợp hôm nay — chỉ nhân viên được gán ca mới check-in / check-out được.
+                  </span>
+                </div>
+              ) : null}
+
+              <div className="pin-display" aria-label="PIN 4 số đã nhập">
+                {[0, 1, 2, 3].map((i) => (
                   <span key={i} className={`pin-dot ${i < pin.length ? "filled" : ""}`} />
                 ))}
               </div>
@@ -358,7 +517,7 @@ export default function KioskPage() {
                     key={key}
                     type="button"
                     data-key={key}
-                    disabled={!selected || busy}
+                    disabled={!selected || !canAttend || busy}
                     onClick={() => pressKey(key)}
                   >
                     {key}
@@ -390,7 +549,14 @@ export default function KioskPage() {
                   </div>
                   <div className="result-banner__meta">
                     <span>
-                      Kết quả: <strong>Sẵn sàng nhận PIN</strong>
+                      Trạng thái:{" "}
+                      <strong>
+                        {selected && isPinLocked
+                          ? `PIN đang tạm khóa (${lockRemaining})`
+                          : selected && !selected.hasAssignedShift
+                            ? "Chưa được phân ca"
+                            : "Sẵn sàng nhận PIN 4 số"}
+                      </strong>
                     </span>
                   </div>
                 </div>

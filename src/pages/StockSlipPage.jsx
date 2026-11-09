@@ -5,10 +5,10 @@ import TaskLayout from "../layouts/TaskLayout.jsx";
 import FormField from "../components/FormField.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { roleLabel } from "../auth/landing.js";
+import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
+import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { inventoryApi } from "../api/inventoryApi.js";
-import { ingredientsApi } from "../api/ingredientsApi.js";
 import { fmtQty } from "./InventoryPage.jsx";
 
 const META = {
@@ -54,9 +54,10 @@ export default function StockSlipPage() {
   toastRef.current = toast;
   const type = META[query?.type] ? query.type : "receive";
   const meta = META[type];
+  const unassignedManager = isUnassignedBranchManager(user);
 
   const [stock, setStock] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!unassignedManager);
   const [header, setHeader] = useState({
     source: "SUPPLIER",
     supplierName: "",
@@ -76,47 +77,20 @@ export default function StockSlipPage() {
   const [result, setResult] = useState(null);
 
   const load = useCallback(async () => {
+    if (unassignedManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      if (type === "receive") {
-        // Với phiếu nhập: lấy toàn bộ danh mục nguyên liệu active để có thể nhập cả nguyên liệu mới
-        const [stockPage, allIngredients] = await Promise.all([
-          inventoryApi.getStock({ branchId: user?.branchId || undefined, uiPage: 1, size: 100 }),
-          ingredientsApi.list("ACTIVE").catch(() => []),
-        ]);
-        const stockItems = stockPage?.content || [];
-        const stockMap = new Map(stockItems.map((s) => [s.ingredientId, s]));
-        const ingList = Array.isArray(allIngredients) ? allIngredients : allIngredients?.data || [];
-
-        // Hợp nhất: lấy tất cả active ingredients, nếu có tồn thì kèm tồn, nếu chưa có thì tồn = 0
-        const merged = ingList
-          .map((ing) => {
-            const st = stockMap.get(ing.id);
-            return {
-              ingredientId: ing.id,
-              ingredientCode: ing.code || `ING-${String(ing.id).padStart(3, "0")}`,
-              ingredientName: ing.name,
-              baseUnit: ing.baseUnit,
-              packUnit: ing.packUnit,
-              currentPackUnits: st ? st.currentPackUnits : 0,
-              hasStock: Boolean(st),
-            };
-          })
-          .sort((a, b) => a.ingredientId - b.ingredientId);
-
-        // Nếu danh mục rỗng (phòng hờ API lỗi), fallback về stockItems
-        setStock(merged.length ? merged : stockItems);
-      } else {
-        const page = await inventoryApi.getStock({ branchId: user?.branchId || undefined, uiPage: 1, size: 100 });
-        const items = (page?.content || []).slice().sort((a, b) => a.ingredientId - b.ingredientId);
-        setStock(items);
-      }
+      const page = await inventoryApi.getStock({ branchId: user?.branchId || undefined, uiPage: 1, size: 100 });
+      setStock(page.content || []);
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được danh mục nguyên liệu trong kho.");
     } finally {
       setLoading(false);
     }
-  }, [type, user?.branchId]);
+  }, [unassignedManager, user?.branchId]);
 
   useEffect(() => {
     load();
@@ -220,7 +194,9 @@ export default function StockSlipPage() {
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}
     >
-      {result ? (
+      {unassignedManager ? (
+        <UnassignedManagerNotice />
+      ) : result ? (
         <div className="scms-panel panel-pad" style={{ maxWidth: 720 }}>
           <div className="panel-head">
             <div>
@@ -403,8 +379,7 @@ export default function StockSlipPage() {
                       >
                         {stock.map((s) => (
                           <option key={s.ingredientId} value={s.ingredientId}>
-                            {s.ingredientCode} — {s.ingredientName}{" "}
-                            {s.hasStock === false ? "(mới — chưa có tồn)" : `(tồn ${fmtQty(s.currentPackUnits)} kiện)`}
+                            {s.ingredientCode} — {s.ingredientName} (tồn {fmtQty(s.currentPackUnits)} kiện)
                           </option>
                         ))}
                       </Form.Select>

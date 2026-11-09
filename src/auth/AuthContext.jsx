@@ -68,6 +68,22 @@ export function AuthProvider({ children }) {
     return result;
   }, []);
 
+  const loginWithPin = useCallback(async (payload) => {
+    const result = await authApi.pinLogin(payload);
+    tokenStore.clear();
+    tokenStore.save(result, false);
+    let fullUser = result.user;
+    try {
+      fullUser = await authApi.me();
+    } catch {
+      // Giữ user rút gọn từ pinLogin nếu /me lỗi.
+    }
+    setUser(fullUser);
+    setLanding(result.landing || null);
+    setStatus("authenticated");
+    return result;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -86,8 +102,8 @@ export function AuthProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ user, landing, status, login, logout, hasPermission, clearSession }),
-    [user, landing, status, login, logout, hasPermission, clearSession],
+    () => ({ user, landing, status, login, loginWithPin, logout, hasPermission, clearSession }),
+    [user, landing, status, login, loginWithPin, logout, hasPermission, clearSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -12,22 +12,13 @@ export default function AdminLayout({
   userRole = null,
   children,
 }) {
-  const { path, query } = useRouter();
-  const queryString = query && Object.keys(query).length > 0
-    ? `?${new URLSearchParams(query).toString()}`
-    : "";
-  const fullPath = `${path}${queryString}`;
-
+  const { path } = useRouter();
   // Item active là item có path khớp dài nhất (tránh hai item cùng active
   // khi một path là tiền tố của path khác, ví dụ /_showcase và /_showcase/session).
   const allPaths = menu.flatMap((s) => s.items.map((i) => i.path));
   const bestMatch = allPaths
-    .filter((p) => p === fullPath || p === path || path.startsWith(`${p}/`))
-    .sort((a, b) => {
-      if (a === fullPath) return -1;
-      if (b === fullPath) return 1;
-      return b.length - a.length;
-    })[0];
+    .filter((p) => path === p || path.startsWith(`${p}/`))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <div className="admin-shell">
