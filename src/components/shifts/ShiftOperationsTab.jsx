@@ -12,15 +12,23 @@ import { POSITION_LABELS } from "../../config/userConstants.js";
 import { formatDate, formatDateTime, formatVnd } from "../../lib/format.js";
 import {
   CASH_TX_META,
+  HANDOVER_STATUS_META,
   SHIFT_STATUS_META,
   SHIFT_TYPE_META,
   actorName,
   formatHm,
   formatSignedVnd,
+  resolveShiftEmployeeRole,
   todayIso,
 } from "./shiftUtils.js";
 
 const OPENING_PRESETS = [500000, 1000000, 1500000, 2000000];
+
+function formatAssignedStaffSummary(empId, shift, employeeMap) {
+  const name = actorName(empId, employeeMap);
+  const { roleLabel, isOverride } = resolveShiftEmployeeRole(empId, shift, employeeMap, POSITION_LABELS);
+  return isOverride ? `${name} (kiêm ${roleLabel})` : name;
+}
 
 function rankScheduledCandidate(s, currentUserId, today) {
   const nowMs = Date.now();
@@ -38,7 +46,8 @@ function rankScheduledCandidate(s, currentUserId, today) {
   };
 }
 
-// Tab Kiểm két & Vận hành ca (UC24–UC27): Mở ca đối soát kết ca cũ, Nạp/Rút két (Quản lý/COO), Theo dõi nhân sự & Đóng ca kiểm đếm.
+// Tab Kiểm két & Vận hành ca (UC24–UC27): Mở ca đối soát kết ca cũ, Nạp/Rút két (Quản lý), Theo dõi nhân sự & Đóng ca kiểm đếm.
+// Ở chế độ readOnly (COO): chỉ xem trạng thái két, nhân sự trực ca, ca chờ mở và xem chi tiết ca — không thao tác két.
 export default function ShiftOperationsTab({
   branchId,
   userRole,
@@ -54,15 +63,24 @@ export default function ShiftOperationsTab({
   employeeMap = {},
   checkedInIds = new Set(),
   canManage = false,
+  readOnly = false,
+  hideStaffSchedule = false,
   onClearPreselectedScheduled,
   onReloadAll,
   onOpenCashModal,
   onOpenCloseModal,
+  onOpenInitiateHandover,
+  onOpenAcceptHandover,
+  onOpenCancelHandover,
+  onChangeCashier,
   onOpenScheduleModal,
+  onViewDetail,
+  onSwitchTab,
 }) {
   const toast = useToast();
   const { navigate } = useRouter();
-  const canAdjustCash = userRole === "COO" || userRole === "BRANCH_MANAGER";
+  const canAdjustCash = !readOnly && (userRole === "COO" || userRole === "BRANCH_MANAGER");
+  const canEditStaff = !readOnly && canManage;
 
   const [openSource, setOpenSource] = useState("scheduled"); // "scheduled" | "adhoc"
   const [selectedScheduledId, setSelectedScheduledId] = useState("");
@@ -171,8 +189,13 @@ export default function ShiftOperationsTab({
           openSource === "scheduled" && selectedScheduledId ? Number(selectedScheduledId) : null,
         note: openNote.trim() || null,
       });
+      const shiftLabel = SHIFT_TYPE_META[created.shiftType]?.label || created.shiftType;
+      const autoCheckInMsg =
+        userRole === "CASHIER" && currentUserId && !checkedInIds.has(currentUserId)
+          ? " và tự động Check-in cho bạn. Quầy POS đã sẵn sàng!"
+          : ".";
       toast.success(
-        `Đã mở ${SHIFT_TYPE_META[created.shiftType]?.label || created.shiftType} (#${created.id}) với két đầu ca ${formatVnd(amount)}.`,
+        `Đã mở ${shiftLabel} (#${created.id}) với két đầu ca ${formatVnd(amount)}${autoCheckInMsg}`,
       );
       setOpeningCash("");
       setOpenNote("");
@@ -220,6 +243,27 @@ export default function ShiftOperationsTab({
     const statusMeta = SHIFT_STATUS_META[activeShift.status] || { label: activeShift.status, variant: "dark" };
     const assignedIds = activeSchedule?.assignedEmployeeIds || [];
     const txRows = currentSummary.transactions || [];
+    const handoverRows = currentSummary.handovers || [];
+    const isHandoverPending = Boolean(activeShift.handoverPending);
+    const pendingHandover = activeShift.pendingHandover || null;
+    const holderName =
+      activeShift.activeCashierName ||
+      activeShift.openedByName ||
+      actorName(activeShift.activeCashierId || activeShift.openedBy, employeeMap);
+    const isSameHolderCashier = Boolean(
+      userRole === "CASHIER" &&
+        pendingHandover?.fromUserId &&
+        currentUserId &&
+        Number(pendingHandover.fromUserId) === Number(currentUserId),
+    );
+    const isInitiatorCashier = Boolean(
+      userRole === "CASHIER" &&
+        pendingHandover &&
+        currentUserId &&
+        (Number(pendingHandover.fromUserId) === Number(currentUserId) ||
+          Number(pendingHandover.outgoingConfirmedBy) === Number(currentUserId)),
+    );
+    const canCancelHandover = Boolean(!readOnly && (userRole !== "CASHIER" || isInitiatorCashier));
     const totalOutAndRefund = Number(currentSummary.totalCashOut || 0) + Number(currentSummary.totalRefundOut || 0);
     const activeOpeningVar =
       activeShift.openingVariance !== null && activeShift.openingVariance !== undefined
@@ -276,6 +320,99 @@ export default function ShiftOperationsTab({
       },
     ];
 
+    const handoverColumns = [
+      {
+        key: "time",
+        header: "Thời gian",
+        render: (h) => (
+          <div className="small">
+            <div>Giao: {formatDateTime(h.outgoingAt)}</div>
+            {h.incomingAt ? (
+              <div className="text-muted-scms">Nhận: {formatDateTime(h.incomingAt)}</div>
+            ) : h.cancelledAt ? (
+              <div className="text-muted-scms">Hủy: {formatDateTime(h.cancelledAt)}</div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: "actors",
+        header: "Giao → Nhận",
+        render: (h) => (
+          <div className="small">
+            <div>
+              <strong>{h.fromUserName || actorName(h.fromUserId, employeeMap)}</strong>
+              {" → "}
+              <strong>{h.toUserName || (h.toUserId ? actorName(h.toUserId, employeeMap) : "Chờ nhận")}</strong>
+            </div>
+            {h.cancelledByName ? <div className="text-muted-scms">Hủy bởi: {h.cancelledByName}</div> : null}
+          </div>
+        ),
+      },
+      {
+        key: "amounts",
+        header: "Kiểm giao / Nhận",
+        numeric: true,
+        render: (h) => (
+          <div className="small">
+            <div>
+              Giao: <strong>{formatVnd(h.outgoingCountedCash)}</strong>
+            </div>
+            <div className="text-muted-scms">Sổ: {formatVnd(h.expectedCashAtOut)}</div>
+            {h.incomingCountedCash !== null && h.incomingCountedCash !== undefined ? (
+              <div>
+                Nhận: <strong>{formatVnd(h.incomingCountedCash)}</strong>
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        key: "variance",
+        header: "Đối soát",
+        render: (h) => {
+          const hasOutVar =
+            h.outgoingVariance !== null &&
+            h.outgoingVariance !== undefined &&
+            Math.abs(Number(h.outgoingVariance)) >= 0.01;
+          const hasInCash = h.incomingCountedCash !== null && h.incomingCountedCash !== undefined;
+          const hasInOutVar =
+            hasInCash &&
+            h.incomingVarianceFromOut !== null &&
+            h.incomingVarianceFromOut !== undefined &&
+            Math.abs(Number(h.incomingVarianceFromOut)) >= 0.01;
+          return (
+            <div className="small">
+              <div>Giao vs sổ: <strong>{hasOutVar ? formatSignedVnd(h.outgoingVariance) : "Khớp"}</strong></div>
+              {hasInCash ? (
+                <div>Nhận vs giao: <strong>{hasInOutVar ? formatSignedVnd(h.incomingVarianceFromOut) : "Khớp 100%"}</strong></div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        key: "reason",
+        header: "Lý do / Ghi chú",
+        render: (h) => (
+          <div className="small">
+            <div><strong>{h.reason}</strong></div>
+            {h.outgoingNote ? <div className="text-muted-scms">Giao: {h.outgoingNote}</div> : null}
+            {h.incomingNote ? <div className="text-muted-scms">Nhận: {h.incomingNote}</div> : null}
+            {h.cancelReason ? <div className="text-muted-scms">Hủy: {h.cancelReason}</div> : null}
+          </div>
+        ),
+      },
+      {
+        key: "status",
+        header: "Trạng thái",
+        render: (h) => {
+          const meta = HANDOVER_STATUS_META[h.status] || { label: h.status, variant: "neutral" };
+          return <StatusTag status={h.status} variant={meta.variant} label={meta.label} />;
+        },
+      },
+    ];
+
     return (
       <>
         <div className="scms-panel panel-pad mb-3">
@@ -284,6 +421,9 @@ export default function ShiftOperationsTab({
               <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
                 <span className="screen-code">CA ĐANG MỞ · #{activeShift.id}</span>
                 <StatusTag status={activeShift.status} label={statusMeta.label} variant={statusMeta.variant} />
+                {isHandoverPending ? (
+                  <StatusTag status="PENDING_RECEIVE" label="Chờ nhận bàn giao két" variant="warn" />
+                ) : null}
               </div>
               <h2 className="mb-1" style={{ fontSize: 19 }}>
                 {typeMeta.label} · Ngày {formatDate(activeShift.shiftDate)}
@@ -292,6 +432,7 @@ export default function ShiftOperationsTab({
                 Khung giờ dự kiến: <strong>{formatHm(activeShift.plannedStart)} – {formatHm(activeShift.plannedEnd)}</strong>
                 {" · "}Mở lúc <strong>{formatDateTime(activeShift.openedAt)}</strong> bởi{" "}
                 <strong>{activeShift.openedByName || actorName(activeShift.openedBy, employeeMap)}</strong>
+                {" · "}Đang giữ két: <strong>{holderName}</strong>
               </div>
               {activeShift.previousShiftId || (activeShift.previousClosingCash !== null && activeShift.previousClosingCash !== undefined) ? (
                 <div className="small mt-1">
@@ -316,30 +457,114 @@ export default function ShiftOperationsTab({
             </div>
 
             <div className="d-flex gap-2 flex-wrap">
-              {canAdjustCash ? (
+              {readOnly ? (
+                <Button variant="primary" onClick={() => onViewDetail?.(activeShift.id)}>
+                  Xem chi tiết ca →
+                </Button>
+              ) : isHandoverPending ? (
                 <>
-                  <Button variant="outline-secondary" onClick={() => onOpenCashModal?.("IN")}>
-                    <Icon name="plus" size={14} /> Nạp tiền két
+                  {isSameHolderCashier ? (
+                    <>
+                      <Button variant="primary" onClick={() => onChangeCashier?.()}>
+                        Đổi thu ngân (mở PIN người mới)
+                      </Button>
+                      <Button
+                        variant="outline-secondary"
+                        disabled
+                        title="Người vừa bàn giao két không thể tự nhận lại ca bằng cùng tài khoản; dùng Đổi thu ngân để người mới nhập PIN hoặc Hủy bàn giao để đứng quầy tiếp."
+                      >
+                        Kiểm két nhận ca
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="primary" onClick={() => onOpenAcceptHandover?.()}>
+                      <Icon name="check" size={14} /> Kiểm két nhận ca &amp; Mở lại POS
+                    </Button>
+                  )}
+                  {canCancelHandover ? (
+                    <Button variant="outline-secondary" onClick={() => onOpenCancelHandover?.()}>
+                      Hủy bàn giao
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline-secondary"
+                    disabled
+                    title="Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca"
+                  >
+                    <Icon name="pos" size={14} /> Mở quầy POS (Đang bàn giao)
                   </Button>
-                  <Button variant="outline-secondary" onClick={() => onOpenCashModal?.("OUT")}>
-                    − Rút tiền két
+                  {canAdjustCash ? (
+                    <Button variant="outline-danger" onClick={() => onOpenCloseModal?.()}>
+                      <Icon name="check" size={14} /> Đóng hẳn ca
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Button variant="primary" onClick={() => navigate("/pos")}>
+                    <Icon name="pos" size={14} /> Mở quầy POS →
+                  </Button>
+                  {canAdjustCash ? (
+                    <>
+                      <Button variant="outline-secondary" onClick={() => onOpenCashModal?.("IN")}>
+                        <Icon name="plus" size={14} /> Nạp tiền két
+                      </Button>
+                      <Button variant="outline-secondary" onClick={() => onOpenCashModal?.("OUT")}>
+                        − Rút tiền két
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button variant="outline-primary" onClick={() => onOpenInitiateHandover?.()}>
+                    Bàn giao két giữa ca
+                  </Button>
+                  <Button variant="outline-danger" onClick={() => onOpenCloseModal?.()}>
+                    <Icon name="check" size={14} /> Đóng ca &amp; Đối soát
                   </Button>
                 </>
-              ) : null}
-              <Button variant="primary" onClick={() => onOpenCloseModal?.()}>
-                <Icon name="check" size={14} /> Đóng ca &amp; Đối soát
-              </Button>
+              )}
             </div>
           </div>
         </div>
 
-        {!canAdjustCash ? (
+        {isHandoverPending && pendingHandover ? (
+          <div className="notice notice--warn mb-3">
+            <strong>!</strong>
+            <span>
+              <strong>Đang tạm khóa POS chờ bàn giao két giữa ca:</strong>{" "}
+              <strong>{pendingHandover.fromUserName || actorName(pendingHandover.fromUserId, employeeMap)}</strong> đã chốt kiểm giao{" "}
+              <strong>{formatVnd(pendingHandover.outgoingCountedCash)}</strong> (lúc{" "}
+              {formatDateTime(pendingHandover.outgoingAt)}) · Lý do: <em>{pendingHandover.reason}</em>.
+              {pendingHandover.toUserId ? (
+                <>
+                  {" "}Người dự kiến nhận:{" "}
+                  <strong>{pendingHandover.toUserName || actorName(pendingHandover.toUserId, employeeMap)}</strong>.
+                </>
+              ) : null}{" "}
+              {readOnly
+                ? "Quầy POS tạm khóa cho đến khi người nhận mới hoặc Quản lý chi nhánh kiểm két xác nhận nhận ca."
+                : isSameHolderCashier
+                  ? "Người tiếp nhận hãy bấm «Đổi thu ngân» để đăng nhập bằng PIN của người mới và kiểm đếm lại tiền két; hoặc nếu bạn ở lại đứng quầy, bấm «Hủy bàn giao»."
+                  : userRole === "CASHIER"
+                    ? "Vui lòng đếm lại tiền mặt thực tế trong két và bấm «Kiểm két nhận ca & Mở lại POS» để nhận quầy & tự động Check-in."
+                    : "Nếu chưa có Thu ngân thay thế kịp, Quản lý có thể bấm «Kiểm két nhận ca & Mở lại POS» để trực tiếp đứng quầy thay (hoặc chọn Thu ngân khác / «Đóng hẳn ca»)."}
+            </span>
+          </div>
+        ) : null}
+
+        {readOnly ? (
           <div className="notice mb-3">
             <strong>i</strong>
             <span>
-              Quyền <strong>Thu ngân</strong>: Bạn có thể kiểm kê két, bán hàng POS và nhập số tiền thực đếm khi đóng ca. Thao tác{" "}
-              <strong>nạp / rút tiền mặt thủ công khỏi két</strong> chỉ dành cho <strong>Quản lý chi nhánh</strong> hoặc <strong>COO</strong>{" "}
-              (tiền thừa thối khách khi order thuộc luồng thanh toán riêng trên đơn).
+              <strong>Chế độ xem COO:</strong> Theo dõi số dư két tiền, nhân sự trực ca và lịch sử biến động theo thời gian thực. Thao tác kiểm két, mở/đóng ca và nạp/rút két do{" "}
+              <strong>Thu ngân</strong> hoặc <strong>Quản lý chi nhánh</strong> thực hiện.
+            </span>
+          </div>
+        ) : !canAdjustCash ? (
+          <div className="notice mb-3">
+            <strong>i</strong>
+            <span>
+              Quyền <strong>Thu ngân</strong>: Bạn có thể kiểm kê két, bán hàng POS, bàn giao két giữa ca khi cần đổi người trực và nhập số tiền thực đếm kèm PIN cá nhân để đóng ca &amp; tự động Check-out. Thao tác{" "}
+              <strong>nạp / rút tiền mặt thủ công khỏi két</strong> chỉ dành cho <strong>Quản lý chi nhánh</strong>.
             </span>
           </div>
         ) : null}
@@ -359,101 +584,127 @@ export default function ShiftOperationsTab({
               {
                 label: "Dự kiến trong két",
                 value: formatVnd(currentSummary.currentCashBalance),
-                sub: "Cần khớp khi đóng ca",
+                sub: isHandoverPending ? "Tạm khóa chờ bàn giao" : "Cần khớp khi đóng ca",
               },
             ]}
           />
         </div>
 
         <Row className="g-3">
-          <Col lg={4}>
-            <div className="scms-panel panel-pad h-100">
-              <div className="panel-head">
-                <div>
-                  <h2>Nhân sự trực ca ({assignedIds.length})</h2>
-                  <p>Phân công cho ca hiện tại &amp; trạng thái chấm công.</p>
-                </div>
-                {canManage ? (
-                  <Button
-                    size="sm"
-                    variant="outline-secondary"
-                    onClick={() => onOpenScheduleModal?.("edit", activeSchedule)}
-                  >
-                    <Icon name="edit" size={13} /> Gán / sửa
-                  </Button>
-                ) : null}
-              </div>
-
-              {assignedIds.length === 0 ? (
-                <div className="empty-state py-4">
-                  <span className="empty-state__icon">
-                    <Icon name="users" size={18} />
-                  </span>
-                  <span>Chưa có nhân viên nào được gán vào ca này.</span>
-                  {canManage ? (
+          {!hideStaffSchedule ? (
+            <Col lg={4}>
+              <div className="scms-panel panel-pad h-100">
+                <div className="panel-head">
+                  <div>
+                    <h2>Nhân sự trực ca ({assignedIds.length})</h2>
+                    <p>Phân công cho ca hiện tại &amp; trạng thái chấm công.</p>
+                  </div>
+                  {canEditStaff ? (
                     <Button
                       size="sm"
-                      variant="primary"
-                      className="mt-1"
+                      variant="outline-secondary"
                       onClick={() => onOpenScheduleModal?.("edit", activeSchedule)}
                     >
-                      Gán nhân viên vào ca
+                      <Icon name="edit" size={13} /> Gán NV/Sửa
                     </Button>
                   ) : null}
                 </div>
-              ) : (
-                <div className="d-flex flex-column gap-2">
-                  {assignedIds.map((empId) => {
-                    const emp = employeeMap[empId];
-                    const checkedIn = checkedInIds.has(empId) || emp?.isCheckedIn;
-                    return (
-                      <div
-                        key={empId}
-                        className="d-flex justify-content-between align-items-center p-2"
-                        style={{
-                          background: "var(--paper)",
-                          border: "1px solid var(--line)",
-                          borderRadius: "var(--radius-xs)",
-                        }}
+
+                {assignedIds.length === 0 ? (
+                  <div className="empty-state py-4">
+                    <span className="empty-state__icon">
+                      <Icon name="users" size={18} />
+                    </span>
+                    <span>Chưa có nhân viên nào được gán vào ca này.</span>
+                    {canEditStaff ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="mt-1"
+                        onClick={() => onOpenScheduleModal?.("edit", activeSchedule)}
                       >
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>
-                            {emp?.fullName || `NV #${empId}`}
+                        Gán nhân viên vào ca
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="d-flex flex-column gap-2">
+                    {assignedIds.map((empId) => {
+                      const emp = employeeMap[empId];
+                      const checkedIn = checkedInIds.has(empId) || emp?.isCheckedIn;
+                      const { roleLabel, baseLabel, isOverride } = resolveShiftEmployeeRole(
+                        empId,
+                        activeSchedule,
+                        employeeMap,
+                        POSITION_LABELS,
+                      );
+                      return (
+                        <div
+                          key={empId}
+                          className="d-flex justify-content-between align-items-center p-2"
+                          style={{
+                            background: isOverride ? "var(--accent-soft)" : "var(--paper)",
+                            border: isOverride ? "1px solid var(--accent)" : "1px solid var(--line)",
+                            borderRadius: "var(--radius-xs)",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>
+                              {emp?.fullName || `NV #${empId}`}
+                            </div>
+                            <div className="text-muted-scms" style={{ fontSize: 11.5 }}>
+                              {isOverride ? (
+                                <>
+                                  <strong>{roleLabel}</strong> (ca này · gốc {baseLabel})
+                                </>
+                              ) : (
+                                roleLabel || "Nhân viên"
+                              )}
+                              {emp?.phone ? ` · ${emp.phone}` : ""}
+                            </div>
                           </div>
-                          <div className="text-muted-scms" style={{ fontSize: 11.5 }}>
-                            {POSITION_LABELS[emp?.roleCode] || emp?.roleCode || "Nhân viên"}
-                            {emp?.phone ? ` · ${emp.phone}` : ""}
-                          </div>
+                          <StatusTag
+                            status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
+                            variant={checkedIn ? "success" : "neutral"}
+                            label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
+                          />
                         </div>
-                        <StatusTag
-                          status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
-                          variant={checkedIn ? "success" : "neutral"}
-                          label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
 
-              <div className="mt-3 pt-2 d-flex justify-content-between align-items-center" style={{ borderTop: "1px solid var(--line)" }}>
-                <span className="small text-muted-scms">Quầy chấm công PIN/RFID</span>
-                <Button size="sm" variant="outline-secondary" onClick={() => navigate("/kiosk")}>
-                  Mở Kiosk →
-                </Button>
+                {!readOnly ? (
+                  <div className="mt-3 pt-2 d-flex justify-content-between align-items-center" style={{ borderTop: "1px solid var(--line)" }}>
+                    <span className="small text-muted-scms">Quầy chấm công PIN/RFID</span>
+                    <Button size="sm" variant="outline-secondary" onClick={() => navigate("/kiosk")}>
+                      Mở Kiosk →
+                    </Button>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          </Col>
+            </Col>
+          ) : null}
 
-          <Col lg={8}>
+          <Col lg={hideStaffSchedule ? 12 : 8}>
             <div className="scms-panel panel-pad mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
                 <h2 className="mb-0" style={{ fontSize: 15 }}>Biến động tiền mặt trong ca ({txRows.length})</h2>
                 <p className="mb-0 text-muted-scms small">Lịch sử mở ca, nạp tiền lẻ, rút tiền và hoàn tiền tại quầy.</p>
               </div>
-              <Button size="sm" variant="outline-secondary" onClick={() => navigate("/pos")}>
-                Mở quầy POS →
-              </Button>
+              {readOnly ? (
+                <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(activeShift.id)}>
+                  Chi tiết đối soát →
+                </Button>
+              ) : isHandoverPending ? (
+                <Button size="sm" variant="outline-secondary" disabled>
+                  POS tạm khóa bàn giao
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline-secondary" onClick={() => navigate("/pos")}>
+                  Mở quầy POS →
+                </Button>
+              )}
             </div>
             <DataTable
               columns={txColumns}
@@ -463,6 +714,158 @@ export default function ShiftOperationsTab({
             />
           </Col>
         </Row>
+
+        {handoverRows.length > 0 ? (
+          <div className="mt-3">
+            <div className="scms-panel panel-pad mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <h2 className="mb-0" style={{ fontSize: 15 }}>Lịch sử bàn giao két giữa ca ({handoverRows.length})</h2>
+                <p className="mb-0 text-muted-scms small">
+                  Ghi nhận kiểm đếm giao/nhận két khi đổi người trực nhưng vẫn giữ nguyên ca bán hàng đang mở.
+                </p>
+              </div>
+            </div>
+            <DataTable
+              columns={handoverColumns}
+              rows={handoverRows}
+              rowKey={(h) => h.id}
+              emptyMessage="Chưa có lượt bàn giao két nào trong ca."
+            />
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  // Trường hợp 2 (COO readOnly): Chưa có ca mở -> chỉ xem trạng thái chi nhánh, kết ca trước + chi tiết ca, và ca đã lên lịch
+  if (readOnly) {
+    return (
+      <>
+        <div className="notice mb-3">
+          <strong>i</strong>
+          <span>
+            Chi nhánh hiện chưa mở ca làm việc. Việc kiểm đếm két đầu ca và mở ca được thực hiện bởi{" "}
+            <strong>Thu ngân</strong> hoặc <strong>Quản lý chi nhánh</strong> (COO chỉ xem tổng quan &amp; chi tiết đối soát).
+          </span>
+        </div>
+
+        <div
+          className="scms-panel panel-pad mb-3"
+          style={{ background: "var(--paper)", border: "1px solid var(--line-strong)" }}
+        >
+          <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div>
+              <div
+                className="text-muted-scms mb-1"
+                style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}
+              >
+                Ca đóng gần nhất tại chi nhánh
+              </div>
+              {loadingPreviousClosed ? (
+                <div className="small text-muted-scms py-1">
+                  <Spinner size="sm" className="me-2" /> Đang tải dữ liệu ca đóng gần nhất…
+                </div>
+              ) : hasPrevClosed ? (
+                <>
+                  <div className="d-flex align-items-baseline gap-2 flex-wrap">
+                    <span style={{ fontSize: 14 }}>Tiền mặt kết ca bàn giao:</span>
+                    <strong className="num" style={{ fontSize: 22 }}>
+                      {formatVnd(prevClosingCash)}
+                    </strong>
+                  </div>
+                  <div className="small text-muted-scms mt-1">
+                    <strong>{SHIFT_TYPE_META[previousClosed.shiftType]?.label || previousClosed.shiftType}</strong>{" "}
+                    <span className="mono">#{previousClosed.shiftId}</span> · Ngày {formatDate(previousClosed.shiftDate)} · Đóng lúc{" "}
+                    <strong>{formatDateTime(previousClosed.closedAt)}</strong> bởi{" "}
+                    <strong>{previousClosed.closedByName || actorName(previousClosed.closedBy, employeeMap)}</strong>
+                    {previousClosed.variance !== null &&
+                    previousClosed.variance !== undefined &&
+                    Math.abs(Number(previousClosed.variance)) >= 0.01 ? (
+                      <> · Chênh lúc đóng ca: <strong>{formatSignedVnd(previousClosed.variance)}</strong></>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <div className="small text-muted-scms">Chi nhánh chưa có ca đã đóng nào trước đó.</div>
+              )}
+            </div>
+
+            {hasPrevClosed && !loadingPreviousClosed ? (
+              <Button
+                type="button"
+                variant="outline-primary"
+                onClick={() => onViewDetail?.(previousClosed.shiftId)}
+              >
+                Xem chi tiết ca #{previousClosed.shiftId} →
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="scms-panel panel-pad">
+          <div className="panel-head">
+            <div>
+              <h2>Ca đã lên lịch chờ mở quanh hôm nay ({orderedScheduledCandidates.length})</h2>
+              <p>Theo dõi lịch phân công các ca sắp tới của chi nhánh.</p>
+            </div>
+            <Button size="sm" variant="outline-secondary" onClick={() => onSwitchTab?.("schedule")}>
+              Xem lịch phân ca →
+            </Button>
+          </div>
+
+          {orderedScheduledCandidates.length === 0 ? (
+            <div className="small text-muted-scms">
+              Chưa có ca nào ở trạng thái Đã lên lịch quanh ngày hôm nay.
+            </div>
+          ) : (
+            <div className="d-flex flex-column gap-2">
+              {orderedScheduledCandidates.map((s) => {
+                const meta = SHIFT_TYPE_META[s.shiftType] || { label: s.shiftType };
+                const isToday = s.shiftDate === today;
+                return (
+                  <div
+                    key={s.shiftId}
+                    className="p-3"
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <strong>
+                          {meta.label} · {formatDate(s.shiftDate)}
+                        </strong>
+                        <span className="mono small text-muted-scms">
+                          #{s.shiftId} · {formatHm(s.plannedStart)} – {formatHm(s.plannedEnd)}
+                        </span>
+                      </div>
+                      <div className="d-flex align-items-center gap-1 flex-wrap">
+                        {isToday ? <StatusTag status="TODAY" label="Hôm nay" variant="dark" /> : null}
+                        <StatusTag status="SCHEDULED" label="Đã lên lịch" variant="neutral" />
+                      </div>
+                    </div>
+                    <div className="small text-muted-scms mt-1">
+                      {s.assignedEmployeeIds?.length ? (
+                        <>
+                          Nhân sự gán ca:{" "}
+                          <strong>
+                            {s.assignedEmployeeIds
+                              .map((id) => formatAssignedStaffSummary(id, s, employeeMap))
+                              .join(", ")}
+                          </strong>
+                        </>
+                      ) : (
+                        "Chưa gán nhân viên vào lịch ca này"
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </>
     );
   }
@@ -546,15 +949,24 @@ export default function ShiftOperationsTab({
           </div>
         </div>
 
-        {userRole === "CASHIER" && currentUserId && !checkedInIds.has(currentUserId) ? (
-          <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
-            <span>
-              <strong>Nhắc đầu ca:</strong> Bạn chưa Check-in chấm công hôm nay. Nếu cần tính công ca làm việc, hãy bấm Check-in tại quầy POS hoặc Kiosk.
-            </span>
-            <Button size="sm" variant="outline-secondary" onClick={() => navigate("/kiosk")}>
-              Mở Kiosk chấm công →
-            </Button>
-          </div>
+        {userRole === "CASHIER" && currentUserId ? (
+          checkedInIds.has(currentUserId) ? (
+            <div className="notice mb-3" style={{ background: "var(--success-soft)", borderColor: "#bcc7b5" }}>
+              <strong>✓</strong>
+              <span>
+                Bạn đã <strong>Check-in</strong> chấm công hôm nay. Hãy kiểm két &amp; xác nhận mở ca để vào quầy <strong>Gọi món (POS)</strong>.
+              </span>
+            </div>
+          ) : (
+            <div className="notice mb-3" style={{ background: "var(--accent-soft)", borderColor: "var(--accent)" }}>
+              <strong>i</strong>
+              <span>
+                <strong>Nhận ca Thu ngân:</strong> Đếm tiền mặt thực tế trong két và bấm{" "}
+                <strong>Xác nhận kiểm két, Mở ca &amp; Check-in</strong> bên dưới — hệ thống sẽ tự động{" "}
+                <strong>Check-in</strong> cho bạn và mở khóa <strong>Gọi món (POS)</strong>.
+              </span>
+            </div>
+          )
         ) : null}
 
         {openApiError ? (
@@ -624,12 +1036,16 @@ export default function ShiftOperationsTab({
                         </div>
                       </div>
                       <div className="small text-muted-scms mt-1 ms-4">
-                        {s.assignedEmployeeIds?.length ? (
+                        {hideStaffSchedule ? (
+                          isMine
+                            ? "Ca được phân công cho bạn · Chọn để kiểm két & mở ca"
+                            : "Ca đã lên lịch sẵn sàng mở tại quầy"
+                        ) : s.assignedEmployeeIds?.length ? (
                           <>
                             Nhân sự gán ca:{" "}
                             <strong>
                               {s.assignedEmployeeIds
-                                .map((id) => actorName(id, employeeMap))
+                                .map((id) => formatAssignedStaffSummary(id, s, employeeMap))
                                 .join(", ")}
                             </strong>
                           </>
@@ -678,7 +1094,7 @@ export default function ShiftOperationsTab({
                 <strong>Mở ca phát sinh (tạo ca mới theo giờ hiện tại)</strong>
               </div>
               <div className="small text-muted-scms mt-1 ms-4">
-                Hệ thống tự suy luận Ca sáng / Ca chiều / Ca tối theo giờ Việt Nam và mở ca trong 8 giờ dự kiến.
+                Hệ thống tự suy luận Ca sáng (07:00–12:30), Ca chiều (12:30–18:00) hoặc Ca tối (18:00–23:00) theo giờ Việt Nam.
               </div>
             </div>
           </div>
@@ -776,7 +1192,9 @@ export default function ShiftOperationsTab({
           <div className="form-actions">
             <Button type="submit" variant="primary" disabled={openingBusy}>
               {openingBusy ? <Spinner size="sm" className="me-2" /> : <Icon name="check" size={14} />}
-              Xác nhận kiểm két &amp; Mở ca
+              {userRole === "CASHIER" && currentUserId && !checkedInIds.has(currentUserId)
+                ? "Xác nhận kiểm két, Mở ca & Check-in"
+                : "Xác nhận kiểm két & Mở ca"}
             </Button>
           </div>
         </Form>

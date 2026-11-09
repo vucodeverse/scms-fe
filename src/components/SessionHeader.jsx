@@ -61,8 +61,9 @@ export default function SessionHeaderRight() {
           variant="outline-secondary"
           size="sm"
           onClick={async () => {
+            const wasCashier = user?.role === "CASHIER";
             await logout();
-            navigate("/pos");
+            navigate(wasCashier ? "/branch/shifts" : "/login");
           }}
         >
           Đăng xuất

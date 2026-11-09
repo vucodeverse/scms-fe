@@ -13,8 +13,10 @@ import {
   SHIFT_TYPES,
   SHIFT_TYPE_META,
   addDaysIso,
+  analyzeScheduleConflicts,
   enumerateDates,
   formatHm,
+  resolveShiftEmployeeRole,
   shortDdMm,
   todayIso,
   weekRange,
@@ -34,11 +36,15 @@ export default function ShiftScheduleTab({
   currentUserId = null,
   hasOpenShift = false,
   canManage = false,
+  readOnly = false,
   onRefresh,
   onOpenCreate,
   onOpenEdit,
   onQuickOpenScheduledShift,
+  onViewDetail,
 }) {
+  const effectiveCanManage = !readOnly && canManage;
+  const canQuickOpen = !readOnly && !hasOpenShift;
   const toast = useToast();
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
   const [employeeFilter, setEmployeeFilter] = useState("");
@@ -68,6 +74,15 @@ export default function ShiftScheduleTab({
     }
     return map;
   }, [schedules]);
+
+  const { mismatchIds, overlapIds, slotDuplicateIds } = useMemo(
+    () => analyzeScheduleConflicts(schedules),
+    [schedules],
+  );
+  const issueShiftCount = useMemo(
+    () => new Set([...mismatchIds, ...overlapIds, ...slotDuplicateIds]).size,
+    [mismatchIds, overlapIds, slotDuplicateIds],
+  );
 
   function shiftWeek(deltaWeeks) {
     const base = addDaysIso(startDate || today, deltaWeeks * 7);
@@ -100,21 +115,35 @@ export default function ShiftScheduleTab({
     [employees],
   );
 
-  function renderStaffChip(empId, shiftDate) {
+  function renderStaffChip(empId, shiftDate, shift) {
     const emp = employeeMap[empId];
     const name = emp?.fullName || `NV #${empId}`;
-    const roleShort = POSITION_LABELS[emp?.roleCode] || emp?.roleCode || "";
+    const { roleLabel, baseLabel, isOverride } = resolveShiftEmployeeRole(
+      empId,
+      shift,
+      employeeMap,
+      POSITION_LABELS,
+    );
+    const chipRole = isOverride ? `${roleLabel} (ca này)` : roleLabel;
     const checkedIn = shiftDate === today && (checkedInIds.has(empId) || emp?.isCheckedIn);
     const highlighted = filterEmpId === empId;
     return (
       <span
         key={empId}
-        className={`staff-pill${highlighted ? " is-highlight" : ""}`}
-        title={roleShort ? `${name} (${roleShort})` : name}
+        className={`staff-pill${highlighted ? " is-highlight" : ""}${isOverride ? " is-override" : ""}`}
+        title={
+          isOverride
+            ? `${name} · Kiêm ${roleLabel} riêng trong ca này (chức danh gốc: ${baseLabel}, tự giữ nguyên sau hết ca)`
+            : roleLabel
+              ? `${name} (${roleLabel})`
+              : name
+        }
       >
         {checkedIn ? <span className="staff-pill__dot" title="Đã check-in hôm nay" /> : null}
         <span>{name}</span>
-        {roleShort ? <span className="staff-pill__role">{roleShort}</span> : null}
+        {chipRole ? (
+          <span className={`staff-pill__role${isOverride ? " is-override" : ""}`}>{chipRole}</span>
+        ) : null}
       </span>
     );
   }
@@ -149,11 +178,36 @@ export default function ShiftScheduleTab({
     {
       key: "time",
       header: "Khung giờ",
-      render: (s) => (
-        <span className="mono">
-          {formatHm(s.plannedStart)} – {formatHm(s.plannedEnd)}
-        </span>
-      ),
+      render: (s) => {
+        const typeMeta = SHIFT_TYPE_META[s.shiftType];
+        const hasOverlap = overlapIds.has(s.shiftId);
+        const hasDup = slotDuplicateIds.has(s.shiftId);
+        const hasMismatch = mismatchIds.has(s.shiftId);
+        return (
+          <div>
+            <span className="mono">
+              {formatHm(s.plannedStart)} – {formatHm(s.plannedEnd)}
+            </span>
+            {hasOverlap ? (
+              <div className="mt-1">
+                <StatusTag status="CONFLICT" label="Chồng khung giờ" variant="warn" />
+              </div>
+            ) : hasDup ? (
+              <div className="mt-1">
+                <StatusTag status="CONFLICT" label="Trùng ca cùng ngày" variant="warn" />
+              </div>
+            ) : hasMismatch ? (
+              <div className="mt-1">
+                <StatusTag
+                  status="MISMATCH"
+                  label={`Lệch giờ chuẩn (${typeMeta?.start}–${typeMeta?.end})`}
+                  variant="warn"
+                />
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "status",
@@ -169,7 +223,7 @@ export default function ShiftScheduleTab({
       render: (s) =>
         s.assignedEmployeeIds?.length ? (
           <div className="d-flex gap-1 flex-wrap">
-            {s.assignedEmployeeIds.map((id) => renderStaffChip(id, s.shiftDate))}
+            {s.assignedEmployeeIds.map((id) => renderStaffChip(id, s.shiftDate, s))}
           </div>
         ) : (
           <span className="text-muted-scms small">Chưa gán nhân viên</span>
@@ -177,25 +231,37 @@ export default function ShiftScheduleTab({
     },
     {
       key: "actions",
-      header: "Thao tác",
-      width: 230,
+      header: readOnly ? "Chi tiết" : "Thao tác",
+      width: readOnly ? 120 : 230,
       render: (s) => (
         <div className="d-flex gap-1 flex-wrap">
-          {canManage && s.status !== "CLOSED" ? (
-            <Button size="sm" variant="outline-secondary" onClick={() => onOpenEdit?.(s)}>
-              Gán NV / Sửa
-            </Button>
-          ) : null}
-          {!hasOpenShift && s.status === "SCHEDULED" ? (
-            <Button size="sm" variant="primary" onClick={() => onQuickOpenScheduledShift?.(s)}>
-              Kiểm két &amp; Mở ca
-            </Button>
-          ) : null}
-          {canManage && s.status === "SCHEDULED" ? (
-            <Button size="sm" variant="outline-danger" onClick={() => setDeleteTarget(s)}>
-              Xóa
-            </Button>
-          ) : null}
+          {readOnly ? (
+            s.status !== "SCHEDULED" ? (
+              <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(s.shiftId)}>
+                Chi tiết ca
+              </Button>
+            ) : (
+              <span className="small text-muted-scms">Chờ mở ca</span>
+            )
+          ) : (
+            <>
+              {effectiveCanManage && s.status !== "CLOSED" ? (
+                <Button size="sm" variant="outline-secondary" onClick={() => onOpenEdit?.(s)}>
+                  Gán NV/Sửa
+                </Button>
+              ) : null}
+              {canQuickOpen && s.status === "SCHEDULED" ? (
+                <Button size="sm" variant="primary" onClick={() => onQuickOpenScheduledShift?.(s)}>
+                  Kiểm két &amp; Mở ca
+                </Button>
+              ) : null}
+              {effectiveCanManage && s.status === "SCHEDULED" ? (
+                <Button size="sm" variant="outline-danger" onClick={() => setDeleteTarget(s)}>
+                  Xóa
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       ),
     },
@@ -279,7 +345,7 @@ export default function ShiftScheduleTab({
             </Button>
           </div>
 
-          {canManage ? (
+          {effectiveCanManage ? (
             <Button size="sm" variant="primary" onClick={() => onOpenCreate?.()}>
               <Icon name="plus" size={14} /> Tạo ca &amp; phân công
             </Button>
@@ -289,6 +355,19 @@ export default function ShiftScheduleTab({
 
       {invalidRange ? (
         <div className="field-error mb-3">&quot;Từ ngày&quot; không được lớn hơn &quot;Đến ngày&quot;.</div>
+      ) : null}
+
+      {!invalidRange && issueShiftCount > 0 ? (
+        <div className="notice notice--warn mb-3">
+          <strong>!</strong>
+          <span>
+            Có <strong>{issueShiftCount}</strong> ca đang lệch khung giờ chuẩn mới ({SHIFT_TYPE_META.MORNING.window} ·{" "}
+            {SHIFT_TYPE_META.EVENING.window} · {SHIFT_TYPE_META.NIGHT.window}) hoặc chồng giờ hoạt động.
+            {effectiveCanManage
+              ? " Bấm Gán NV/Sửa ở thẻ ca được đánh dấu để đưa về giờ chuẩn, tránh lỗi trùng lịch nhân sự (BR-15)."
+              : " Quản lý chi nhánh cần chỉnh lại khung giờ chuẩn để tránh xung đột phân ca (BR-15)."}
+          </span>
+        </div>
       ) : null}
 
       {viewMode === "grid" && !invalidRange ? (
@@ -341,7 +420,7 @@ export default function ShiftScheduleTab({
                           className={`shift-matrix__cell${day === today ? " is-today" : ""}`}
                         >
                           {cellShifts.length === 0 ? (
-                            canManage ? (
+                            effectiveCanManage ? (
                               <button
                                 type="button"
                                 className="shift-slot-empty"
@@ -360,12 +439,18 @@ export default function ShiftScheduleTab({
                               };
                               const matchesFilter =
                                 !filterEmpId || (s.assignedEmployeeIds || []).includes(filterEmpId);
+                              const hasOverlap = overlapIds.has(s.shiftId);
+                              const hasDup = slotDuplicateIds.has(s.shiftId);
+                              const hasMismatch = mismatchIds.has(s.shiftId);
+                              const hasIssue = hasOverlap || hasDup || hasMismatch;
+                              const isHistoricalClosedSibling =
+                                s.status === "CLOSED" && cellShifts.length > 1;
                               return (
                                 <div
                                   key={s.shiftId}
                                   className={`shift-slot-card is-${String(s.status || "scheduled").toLowerCase()}${
                                     !matchesFilter ? " is-dimmed" : ""
-                                  }`}
+                                  }${hasIssue ? " is-warn" : ""}`}
                                 >
                                   <div className="d-flex justify-content-between align-items-center gap-1 mb-1 flex-wrap">
                                     <span className="mono" style={{ fontSize: 11, fontWeight: 600 }}>
@@ -383,10 +468,40 @@ export default function ShiftScheduleTab({
                                     </div>
                                   </div>
 
+                                  {hasOverlap ? (
+                                    <div
+                                      className="shift-slot-warn"
+                                      title="Khung giờ ca này đang chồng lên một ca chưa đóng khác."
+                                    >
+                                      Chồng khung giờ ca khác
+                                    </div>
+                                  ) : hasDup ? (
+                                    <div
+                                      className="shift-slot-warn"
+                                      title="Cùng ngày đang có hơn 1 ca hoạt động trong ô này."
+                                    >
+                                      Trùng ca cùng khung
+                                    </div>
+                                  ) : hasMismatch ? (
+                                    <div
+                                      className="shift-slot-warn"
+                                      title={`Khung chuẩn của ${typeMeta.label} là ${typeMeta.start}–${typeMeta.end}. Bấm Gán NV/Sửa để cập nhật.`}
+                                    >
+                                      Lệch chuẩn ({typeMeta.start}–{typeMeta.end})
+                                    </div>
+                                  ) : isHistoricalClosedSibling ? (
+                                    <div
+                                      className="shift-slot-note"
+                                      title="Ca phát sinh đã đóng trước đó trong cùng khung ca."
+                                    >
+                                      Ca đã đóng trước đó
+                                    </div>
+                                  ) : null}
+
                                   <div className="d-flex flex-column gap-1 my-1">
                                     {s.assignedEmployeeIds?.length ? (
                                       <div className="d-flex flex-wrap gap-1">
-                                        {s.assignedEmployeeIds.map((id) => renderStaffChip(id, s.shiftDate))}
+                                        {s.assignedEmployeeIds.map((id) => renderStaffChip(id, s.shiftDate, s))}
                                       </div>
                                     ) : (
                                       <span className="text-muted-scms" style={{ fontSize: 11, fontStyle: "italic" }}>
@@ -395,40 +510,54 @@ export default function ShiftScheduleTab({
                                     )}
                                   </div>
 
-                                  <div className="d-flex gap-1 flex-wrap mt-2 pt-1" style={{ borderTop: "1px dashed var(--line)" }}>
-                                    {canManage && s.status !== "CLOSED" ? (
-                                      <Button
-                                        size="sm"
-                                        variant="outline-secondary"
-                                        style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
-                                        onClick={() => onOpenEdit?.(s)}
-                                      >
-                                        Gán NV
-                                      </Button>
-                                    ) : null}
-                                    {!hasOpenShift && s.status === "SCHEDULED" ? (
-                                      <Button
-                                        size="sm"
-                                        variant="primary"
-                                        style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
-                                        onClick={() => onQuickOpenScheduledShift?.(s)}
-                                        title="Chuyển sang Kiểm két & Mở ca phân công này"
-                                      >
-                                        Kiểm két &amp; Mở
-                                      </Button>
-                                    ) : null}
-                                    {canManage && s.status === "SCHEDULED" ? (
-                                      <Button
-                                        size="sm"
-                                        variant="outline-secondary"
-                                        style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
-                                        onClick={() => setDeleteTarget(s)}
-                                        title="Xóa ca chưa mở"
-                                      >
-                                        Xóa
-                                      </Button>
-                                    ) : null}
-                                  </div>
+                                  {(effectiveCanManage && s.status !== "CLOSED") ||
+                                  (canQuickOpen && s.status === "SCHEDULED") ||
+                                  (readOnly && s.status !== "SCHEDULED") ? (
+                                    <div className="d-flex gap-1 flex-wrap mt-2 pt-1" style={{ borderTop: "1px dashed var(--line)" }}>
+                                      {readOnly && s.status !== "SCHEDULED" ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline-secondary"
+                                          style={{ fontSize: 11, minHeight: 24, padding: "0 7px", whiteSpace: "nowrap" }}
+                                          onClick={() => onViewDetail?.(s.shiftId)}
+                                        >
+                                          Chi tiết ca
+                                        </Button>
+                                      ) : null}
+                                      {effectiveCanManage && s.status !== "CLOSED" ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline-secondary"
+                                          style={{ fontSize: 11, minHeight: 24, padding: "0 7px", whiteSpace: "nowrap" }}
+                                          onClick={() => onOpenEdit?.(s)}
+                                        >
+                                          Gán NV/Sửa
+                                        </Button>
+                                      ) : null}
+                                      {canQuickOpen && s.status === "SCHEDULED" ? (
+                                        <Button
+                                          size="sm"
+                                          variant="primary"
+                                          style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
+                                          onClick={() => onQuickOpenScheduledShift?.(s)}
+                                          title="Chuyển sang Kiểm két & Mở ca phân công này"
+                                        >
+                                          Kiểm két &amp; Mở
+                                        </Button>
+                                      ) : null}
+                                      {effectiveCanManage && s.status === "SCHEDULED" ? (
+                                        <Button
+                                          size="sm"
+                                          variant="outline-secondary"
+                                          style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
+                                          onClick={() => setDeleteTarget(s)}
+                                          title="Xóa ca chưa mở"
+                                        >
+                                          Xóa
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
                                 </div>
                               );
                             })

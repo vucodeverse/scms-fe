@@ -13,6 +13,7 @@ const PAGE_SIZE = 10;
 export default function ShiftHistoryTab({
   branchId,
   allBranches = false,
+  cashierPreviousOnly = false,
   refreshTrigger = 0,
   onViewDetail,
 }) {
@@ -27,7 +28,7 @@ export default function ShiftHistoryTab({
   const [page, setPage] = useState({ items: [], totalPages: 0, totalItems: 0 });
   const [loading, setLoading] = useState(true);
 
-  const invalidRange = startDate && endDate && startDate > endDate;
+  const invalidRange = !cashierPreviousOnly && startDate && endDate && startDate > endDate;
 
   const load = useCallback(async () => {
     if ((!branchId && !allBranches) || invalidRange) {
@@ -36,22 +37,40 @@ export default function ShiftHistoryTab({
     }
     setLoading(true);
     try {
-      const res = await shiftsApi.list({
-        branchId: allBranches ? undefined : branchId,
-        status: statusFilter || undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        uiPage,
-        size: PAGE_SIZE,
-        sortDir: "DESC",
-      });
+      const res = cashierPreviousOnly
+        ? await shiftsApi.list({
+            branchId,
+            status: "CLOSED",
+            uiPage: 1,
+            size: 1,
+            sortDir: "DESC",
+          })
+        : await shiftsApi.list({
+            branchId: allBranches ? undefined : branchId,
+            status: statusFilter || undefined,
+            startDate: startDate || undefined,
+            endDate: endDate || undefined,
+            uiPage,
+            size: PAGE_SIZE,
+            sortDir: "DESC",
+          });
       setPage(res);
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được lịch sử ca làm việc.");
     } finally {
       setLoading(false);
     }
-  }, [branchId, allBranches, statusFilter, startDate, endDate, uiPage, invalidRange, refreshTrigger]);
+  }, [
+    branchId,
+    allBranches,
+    cashierPreviousOnly,
+    statusFilter,
+    startDate,
+    endDate,
+    uiPage,
+    invalidRange,
+    refreshTrigger,
+  ]);
 
   useEffect(() => {
     load();
@@ -157,7 +176,16 @@ export default function ShiftHistoryTab({
     },
   ];
 
-  const toolbar = (
+  const toolbar = cashierPreviousOnly ? (
+    <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between w-100">
+      <div className="small text-muted-scms">
+        Thu ngân chỉ xem được đối soát của <strong>ca đã đóng ngay trước đó</strong> tại chi nhánh (không xem toàn bộ lịch sử nhiều ca).
+      </div>
+      <Button size="sm" variant="outline-secondary" onClick={load} disabled={loading}>
+        Làm mới
+      </Button>
+    </div>
+  ) : (
     <div className="d-flex flex-wrap gap-2 align-items-end w-100">
       <div style={{ minWidth: 165 }}>
         <Form.Label className="mb-1">Trạng thái</Form.Label>
@@ -237,9 +265,17 @@ export default function ShiftHistoryTab({
         rows={page.items}
         rowKey={(r) => r.id}
         loading={loading}
-        emptyMessage="Chưa có ca làm việc nào khớp bộ lọc."
+        emptyMessage={
+          cashierPreviousOnly
+            ? "Chi nhánh chưa có ca đã đóng trước đó."
+            : "Chưa có ca làm việc nào khớp bộ lọc."
+        }
         toolbar={toolbar}
-        pagination={{ page: uiPage, totalPages: page.totalPages, onChange: setUiPage }}
+        pagination={
+          cashierPreviousOnly
+            ? undefined
+            : { page: uiPage, totalPages: page.totalPages, onChange: setUiPage }
+        }
       />
     </>
   );

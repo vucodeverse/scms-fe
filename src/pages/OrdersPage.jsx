@@ -10,10 +10,11 @@ import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
-import { buildMenu, POS_MENU } from "../config/menu.js";
+import { buildMenu, buildPosMenu } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { shiftsApi } from "../api/shiftsApi.js";
 
 export const ORDER_STATUS_META = {
   PENDING: { label: "Chờ thanh toán", variant: "warn" },
@@ -36,9 +37,15 @@ function dayEndIso(dateStr) {
 
 export default function OrdersPage() {
   const { navigate } = useRouter();
-  const { user } = useAuth();
+  const { user, status: authStatus } = useAuth();
   const toast = useToast();
-  const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
+  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false });
+  const menu =
+    !user || authStatus !== "authenticated"
+      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false })
+      : user.role === "CASHIER"
+        ? buildPosMenu({ unlocked: true, shiftOpen: shiftState.open, handoverPending: shiftState.handoverPending })
+        : buildMenu(user);
   const unassignedManager = isUnassignedBranchManager(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
@@ -59,12 +66,18 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(!unassignedManager);
 
   useEffect(() => {
-    if (!unassignedManager && !user?.branchId) {
+    if (authStatus === "anonymous") {
+      navigate("/branch/shifts");
+    }
+  }, [authStatus, navigate]);
+
+  useEffect(() => {
+    if (authStatus === "authenticated" && user && !unassignedManager && !user?.branchId) {
       branchesApi.list({ uiPage: 1, size: 100 })
         .then((res) => setBranches(res.items || []))
         .catch(() => {});
     }
-  }, [unassignedManager, user?.branchId]);
+  }, [authStatus, user, unassignedManager, user?.branchId]);
 
   const branchMap = useMemo(() => {
     const map = {};
@@ -74,7 +87,28 @@ export default function OrdersPage() {
 
   const effectiveBranchId = user?.branchId || (selectedBranchId ? Number(selectedBranchId) : undefined);
 
+  useEffect(() => {
+    if (
+      authStatus !== "authenticated" ||
+      (user?.role !== "CASHIER" && user?.role !== "BRANCH_MANAGER") ||
+      !effectiveBranchId
+    ) {
+      setShiftState({ open: false, handoverPending: false });
+      return;
+    }
+    shiftsApi
+      .current(effectiveBranchId)
+      .then((sum) =>
+        setShiftState({
+          open: true,
+          handoverPending: Boolean(sum?.shift?.handoverPending),
+        }),
+      )
+      .catch(() => setShiftState({ open: false, handoverPending: false }));
+  }, [authStatus, user?.role, effectiveBranchId]);
+
   const load = useCallback(async () => {
+    if (authStatus !== "authenticated" || !user) return;
     if (unassignedManager) {
       setLoading(false);
       return;
@@ -96,7 +130,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [unassignedManager, effectiveBranchId, status, keyword, fromDate, toDate, uiPage]);
+  }, [authStatus, user, unassignedManager, effectiveBranchId, status, keyword, fromDate, toDate, uiPage]);
 
   useEffect(() => {
     load();
@@ -204,14 +238,36 @@ export default function OrdersPage() {
         screenCode="SCR-05 · Đơn hàng"
         description="Đơn bán tại quầy của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
         actions={
-          unassignedManager ? null : (
+          unassignedManager || authStatus !== "authenticated" ? null : user?.role === "CASHIER" && !shiftState.open ? (
+            <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
+              Kiểm két &amp; Mở ca →
+            </Button>
+          ) : shiftState.handoverPending ? (
+            <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
+              Kiểm két nhận ca →
+            </Button>
+          ) : (
             <Button variant="primary" onClick={() => navigate("/pos")}>
               + Tạo đơn mới (POS)
             </Button>
           )
         }
       />
-      {unassignedManager ? (
+      {shiftState.handoverPending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Đang tạm khóa POS chờ bàn giao két giữa ca:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi người nhận xác nhận kiểm két.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : null}
+      {authStatus !== "authenticated" ? (
+        <div className="text-center py-5">
+          <Spinner className="me-2" /> Đang tải…
+        </div>
+      ) : unassignedManager ? (
         <UnassignedManagerNotice />
       ) : loading && page.content.length === 0 ? (
         <div className="text-center py-5">

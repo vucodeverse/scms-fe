@@ -51,8 +51,24 @@ export const shiftsApi = {
     return http.post(`/shifts/${shiftId}/close`, payload);
   },
 
+  initiateHandover(shiftId, payload) {
+    return http.post(`/shifts/${shiftId}/handover/initiate`, payload);
+  },
+
+  acceptHandover(shiftId, payload) {
+    return http.post(`/shifts/${shiftId}/handover/accept`, payload);
+  },
+
+  cancelHandover(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/handover/cancel`, payload);
+  },
+
   schedules({ branchId, startDate, endDate }) {
     return http.get("/shifts/schedules", { params: { branchId, startDate, endDate } });
+  },
+
+  openCandidates(branchId) {
+    return http.get("/shifts/open-candidates", { params: { branchId } });
   },
 
   createSchedule(payload) {

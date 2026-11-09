@@ -39,6 +39,25 @@ export default function AdminLayout({
                 <div className="sidebar__group">{section.group}</div>
                 {section.items.map((item) => {
                   const active = item.path === bestMatch;
+                  if (item.disabled) {
+                    return (
+                      <span
+                        key={item.key}
+                        className="sidebar__item"
+                        style={{ opacity: 0.5, cursor: "not-allowed" }}
+                        title={item.disabledReason || item.label}
+                        aria-disabled="true"
+                      >
+                        {item.icon ? (
+                          <span className="sidebar__icon">
+                            <Icon name={item.icon} size={16} />
+                          </span>
+                        ) : null}
+                        <span className="sidebar__label">{item.label}</span>
+                        {item.badge ? <span className="sidebar__badge">{item.badge}</span> : null}
+                      </span>
+                    );
+                  }
                   return (
                     <RouteLink
                       key={item.key}

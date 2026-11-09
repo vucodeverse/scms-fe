@@ -10,19 +10,30 @@ import { ORDER_STATUS_META } from "./OrdersPage.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildMenu, POS_MENU } from "../config/menu.js";
+import { buildMenu, buildPosMenu } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { paymentsApi } from "../api/paymentsApi.js";
+import { shiftsApi } from "../api/shiftsApi.js";
 
 // Chi tiết đơn hàng — trang chứa toàn bộ thao tác của đơn (chuẩn
 // FE-13): thông tin đơn, các dòng món, voucher, thanh toán tiền mặt /
 // VietQR (đơn PENDING) và hủy đơn kèm lý do bắt buộc (UC18).
 export default function OrderDetailPage() {
   const { query, navigate } = useRouter();
-  const { user } = useAuth();
+  const { user, status: authStatus } = useAuth();
   const toast = useToast();
-  const menu = !user || user.role === "CASHIER" ? POS_MENU : buildMenu(user);
+  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false });
+  const menu =
+    !user || authStatus !== "authenticated"
+      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false })
+      : user.role === "CASHIER"
+        ? buildPosMenu({
+            unlocked: true,
+            shiftOpen: shiftState.open,
+            handoverPending: shiftState.handoverPending,
+          })
+        : buildMenu(user);
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const id = Number(query?.id);
@@ -35,7 +46,40 @@ export default function OrderDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState(null);
 
+  useEffect(() => {
+    if (authStatus === "anonymous") {
+      navigate("/branch/shifts");
+    }
+  }, [authStatus, navigate]);
+
+  const effectiveBranchId = user?.branchId || order?.branchId || null;
+
+  const refreshShiftState = useCallback(() => {
+    if (
+      authStatus !== "authenticated" ||
+      (user?.role !== "CASHIER" && user?.role !== "BRANCH_MANAGER") ||
+      !effectiveBranchId
+    ) {
+      setShiftState({ open: false, handoverPending: false });
+      return;
+    }
+    shiftsApi
+      .current(effectiveBranchId)
+      .then((sum) =>
+        setShiftState({
+          open: true,
+          handoverPending: Boolean(sum?.shift?.handoverPending),
+        }),
+      )
+      .catch(() => setShiftState({ open: false, handoverPending: false }));
+  }, [authStatus, user?.role, effectiveBranchId]);
+
+  useEffect(() => {
+    refreshShiftState();
+  }, [refreshShiftState]);
+
   const load = useCallback(async () => {
+    if (authStatus !== "authenticated" || !user) return;
     setLoading(true);
     try {
       const detail = await ordersApi.detail(id);
@@ -52,7 +96,7 @@ export default function OrderDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [authStatus, user, id]);
 
   useEffect(() => {
     load();
@@ -93,14 +137,34 @@ export default function OrderDetailPage() {
         description="Thông tin đơn, các món đã gọi và các thao tác thanh toán / hủy đơn."
         actions={
           <div className="d-flex gap-2">
-            <Button
-              variant="outline-primary"
-              size="sm"
-              onClick={() => navigate("/pos")}
-              href="#/pos"
-            >
-              Về quầy POS
-            </Button>
+            {user?.role === "CASHIER" && !shiftState.open ? (
+              <Button
+                variant="outline-primary"
+                size="sm"
+                onClick={() => navigate("/branch/shifts")}
+                href="#/branch/shifts"
+              >
+                Kiểm két &amp; Mở ca →
+              </Button>
+            ) : shiftState.handoverPending ? (
+              <Button
+                variant="outline-primary"
+                size="sm"
+                onClick={() => navigate("/branch/shifts")}
+                href="#/branch/shifts"
+              >
+                Kiểm két nhận ca →
+              </Button>
+            ) : (
+              <Button
+                variant="outline-primary"
+                size="sm"
+                onClick={() => navigate("/pos")}
+                href="#/pos"
+              >
+                Về quầy POS
+              </Button>
+            )}
             <Button
               variant="outline-secondary"
               size="sm"
@@ -113,7 +177,18 @@ export default function OrderDetailPage() {
         }
       />
 
-      {loading ? (
+      {shiftState.handoverPending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Két tiền ca hiện tại đang tạm khóa chờ xác nhận bàn giao giữa ca:</strong> tạm dừng thu tiền mặt, tạo VietQR hoặc hoàn tiền cho đến khi người nhận kiểm két nhận ca.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : null}
+
+      {authStatus !== "authenticated" || loading ? (
         <div className="text-center py-5">
           <Spinner className="me-2" /> Đang tải…
         </div>
@@ -236,7 +311,13 @@ export default function OrderDetailPage() {
                 </div>
               ) : null}
 
-              <OrderPaymentPanel order={order} onOrderChanged={setOrder} />
+              <OrderPaymentPanel
+                order={order}
+                onOrderChanged={(nextOrder) => {
+                  setOrder(nextOrder);
+                  refreshShiftState();
+                }}
+              />
               {order.status === "PENDING" ? (
                 <>
                   <Button

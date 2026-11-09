@@ -76,14 +76,14 @@ const REPORT_ROUTES = [
 ];
 
 // Điểm vào "/": đã đăng nhập -> trang đích theo vai trò (SCR-03);
-// chưa đăng nhập -> SCR-01 Đăng nhập.
+// chưa đăng nhập -> quầy Ca & két tiền để Thu ngân mở khóa PIN & kiểm két.
 function RootDispatch() {
   const { status, user } = useAuth();
   const { navigate } = useRouter();
 
   useEffect(() => {
     if (status === "authenticated" && user) navigate(landingPath({ user }));
-    else if (status === "anonymous") navigate("/pos");
+    else if (status === "anonymous") navigate("/branch/shifts");
   }, [status, user, navigate]);
 
   return (

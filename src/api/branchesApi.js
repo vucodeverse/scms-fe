@@ -1,7 +1,9 @@
-import { http } from "./client.js";
+import { http, publicHttp } from "./client.js";
 import { buildListParams, normalizePage } from "./paging.js";
 
-// API chi nhánh (UC05) — /api/v1/branches, chỉ COO.
+// API chi nhánh (UC05) — /api/v1/branches.
+// GET /branches là permitAll ở backend (publicList dùng cho Kiosk không cần phiên);
+// các thao tác CRUD còn lại chỉ dành cho COO.
 // Tạo mới dùng CreateBranchRequest (có code, managerUserId tùy chọn); sửa dùng
 // SaveBranchRequest (không có code — mã read-only sau khi tạo).
 export const branchesApi = {
@@ -14,6 +16,17 @@ export const branchesApi = {
       filters: { keyword, status },
     });
     const page = await http.get("/branches", { params });
+    return normalizePage(page);
+  },
+  async publicList({ uiPage = 1, size = 100, keyword, status, sortBy = "code", sortDir = "ASC" } = {}) {
+    const params = buildListParams({
+      uiPage,
+      size,
+      sortBy,
+      sortDir,
+      filters: { keyword, status },
+    });
+    const page = await publicHttp.get("/branches", { params });
     return normalizePage(page);
   },
   detail(id) {

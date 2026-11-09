@@ -11,7 +11,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { POS_MENU } from "../config/menu.js";
+import { buildPosMenu } from "../config/menu.js";
 import { formatNumber, formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
@@ -40,11 +40,10 @@ function formatLockRemaining(untilIso, nowMs) {
 // mà chưa trả tiền vẫn ở trạng thái PENDING trong danh sách đơn hàng
 // (đơn chờ) — mở lại từ trang Đơn hàng để thanh toán tiếp.
 export default function PosPage() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const { navigate } = useRouter();
   const toast = useToast();
-  // Màn POS chỉ hiển thị các chức năng của quầy POS (Gọi món, Đơn quầy, Chấm công)
-  const menu = POS_MENU;
+  // Sidebar POS khóa mục Gọi món khi chưa mở khóa Thu ngân hoặc chưa mở ca
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -83,27 +82,105 @@ export default function PosPage() {
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [recipeError, setRecipeError] = useState(null);
   const [shiftBanner, setShiftBanner] = useState(null);
+  const [checkingShift, setCheckingShift] = useState(true);
+  const redirectedRef = useRef(false);
 
-  const checkShiftStatus = useCallback(async (targetBranchId) => {
-    if (!user || !targetBranchId) {
-      setShiftBanner(null);
-      return;
-    }
-    try {
-      const sum = await shiftsApi.current(targetBranchId);
-      setShiftBanner({ open: true, shift: sum.shift, cashBalance: sum.currentCashBalance });
-    } catch (err) {
-      if (err?.detailCode === "SHIFT_NOT_OPEN") {
-        setShiftBanner({ open: false });
-      } else {
-        setShiftBanner(null);
-      }
-    }
-  }, [user]);
+  const effectiveBranchId = user?.branchId || branchId;
+  const menu = buildPosMenu({
+    unlocked: status === "authenticated" && Boolean(user),
+    shiftOpen: Boolean(shiftBanner?.open),
+    handoverPending: Boolean(shiftBanner?.handoverPending),
+  });
 
   useEffect(() => {
-    checkShiftStatus(branchId);
-  }, [checkShiftStatus, branchId]);
+    if (user?.branchId && branchId !== user.branchId) {
+      setBranchId(user.branchId);
+    }
+  }, [user?.branchId, branchId]);
+
+  // Bắt buộc đi qua Ca & két tiền nếu chưa đăng nhập (kể cả vào thẳng #/pos)
+  useEffect(() => {
+    if (status !== "anonymous") return;
+    if (!redirectedRef.current) {
+      redirectedRef.current = true;
+      toastRef.current.info(
+        "Vui lòng mở khóa Thu ngân bằng PIN, kiểm két & mở ca trước khi vào Gọi món (POS)."
+      );
+    }
+    navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`);
+  }, [status, effectiveBranchId, navigate]);
+
+  const checkShiftStatus = useCallback(async (targetBranchId) => {
+    if (status !== "authenticated" || !user) {
+      setShiftBanner(null);
+      setCheckingShift(status === "restoring");
+      return;
+    }
+    if (!targetBranchId) {
+      setShiftBanner(null);
+      setCheckingShift(false);
+      return;
+    }
+    setCheckingShift(true);
+    try {
+      const sum = await shiftsApi.current(targetBranchId);
+      setShiftBanner({
+        open: true,
+        shift: sum.shift,
+        cashBalance: sum.currentCashBalance,
+        handoverPending: Boolean(sum.shift?.handoverPending),
+      });
+    } catch (err) {
+      if (err?.detailCode === "SHIFT_NOT_OPEN") {
+        setShiftBanner({ open: false, handoverPending: false });
+      } else {
+        setShiftBanner({
+          open: false,
+          handoverPending: false,
+          error: err?.message || "Không kiểm tra được trạng thái ca bán hàng.",
+        });
+      }
+    } finally {
+      setCheckingShift(false);
+    }
+  }, [status, user]);
+
+  useEffect(() => {
+    checkShiftStatus(effectiveBranchId);
+  }, [checkShiftStatus, effectiveBranchId]);
+
+  // Tự kiểm tra lại trạng thái ca khi quay lại tab POS
+  useEffect(() => {
+    if (status !== "authenticated" || !user || !effectiveBranchId) return undefined;
+    const onFocus = () => checkShiftStatus(effectiveBranchId);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [status, user, effectiveBranchId, checkShiftStatus]);
+
+  // Thu ngân không được vào thẳng Gọi món POS nếu chưa mở ca hoặc đang chờ bàn giao két -> đưa về Ca & két tiền
+  useEffect(() => {
+    if (
+      status === "authenticated" &&
+      user?.role === "CASHIER" &&
+      !checkingShift &&
+      shiftBanner &&
+      (!shiftBanner.open || shiftBanner.handoverPending)
+    ) {
+      if (!redirectedRef.current) {
+        redirectedRef.current = true;
+        toastRef.current.warning(
+          shiftBanner.handoverPending
+            ? "Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca — vui lòng kiểm két nhận ca tại Ca & két tiền."
+            : shiftBanner.error
+              ? `${shiftBanner.error} Đang chuyển về màn Ca & két tiền.`
+              : "Chi nhánh chưa mở ca — vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)."
+        );
+      }
+      navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`);
+    } else if (status === "authenticated" && shiftBanner?.open && !shiftBanner?.handoverPending) {
+      redirectedRef.current = false;
+    }
+  }, [status, user?.role, checkingShift, shiftBanner, effectiveBranchId, navigate]);
 
   const openRecipeModal = (prod, defaultSz) => {
     if (!prod) return;
@@ -134,6 +211,7 @@ export default function PosPage() {
   }, [recipeModalProduct, recipeModalSize]);
 
   const load = useCallback(async () => {
+    if (status !== "authenticated" || !user) return;
     setLoading(true);
     try {
       const [prodPage, cats] = await Promise.all([
@@ -161,11 +239,13 @@ export default function PosPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.branchId]);
+  }, [status, user]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (status === "authenticated" && user) {
+      load();
+    }
+  }, [status, user, load]);
 
   const loadAttendanceEmployees = useCallback(async (bId, { preserveMessage = false } = {}) => {
     if (!bId) return;
@@ -209,12 +289,12 @@ export default function PosPage() {
 
   useEffect(() => {
     if (showAttendanceModal) {
-      loadAttendanceEmployees(branchId || 1);
+      loadAttendanceEmployees(effectiveBranchId || 1);
       setAttMessage(null);
       setAttPin("");
   
     }
-  }, [showAttendanceModal, branchId, loadAttendanceEmployees]);
+  }, [showAttendanceModal, effectiveBranchId, loadAttendanceEmployees]);
 
   const selectedAttEmp = useMemo(
     () => attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId)) || null,
@@ -231,13 +311,13 @@ export default function PosPage() {
     setAttNowMs(Date.now());
     const tick = setInterval(() => setAttNowMs(Date.now()), 1000);
     const poll = setInterval(() => {
-      loadAttendanceEmployees(branchId || 1, { preserveMessage: true });
+      loadAttendanceEmployees(effectiveBranchId || 1, { preserveMessage: true });
     }, 10000);
     return () => {
       clearInterval(tick);
       clearInterval(poll);
     };
-  }, [showAttendanceModal, attHasAnyLocked, branchId, loadAttendanceEmployees]);
+  }, [showAttendanceModal, attHasAnyLocked, effectiveBranchId, loadAttendanceEmployees]);
 
   useEffect(() => {
     if (!showAttendanceModal || !selectedAttEmp?.pinLocked || !selectedAttEmp?.pinLockedUntil) return;
@@ -245,8 +325,8 @@ export default function PosPage() {
     const key = `${selectedAttEmp.employeeId}:${selectedAttEmp.pinLockedUntil}`;
     if (attExpiredReloadRef.current === key) return;
     attExpiredReloadRef.current = key;
-    loadAttendanceEmployees(branchId || 1, { preserveMessage: true });
-  }, [showAttendanceModal, selectedAttEmp, attLockRemaining, branchId, loadAttendanceEmployees]);
+    loadAttendanceEmployees(effectiveBranchId || 1, { preserveMessage: true });
+  }, [showAttendanceModal, selectedAttEmp, attLockRemaining, effectiveBranchId, loadAttendanceEmployees]);
 
   async function handleAttendanceSubmit(e) {
     e?.preventDefault();
@@ -277,7 +357,7 @@ export default function PosPage() {
     setAttBusy(true);
     setAttMessage(null);
 
-    const targetBranch = branchId || 1;
+    const targetBranch = effectiveBranchId || 1;
     const payload = {
       branchId: targetBranch,
       employeeId: Number(selectedEmpId),
@@ -382,15 +462,23 @@ export default function PosPage() {
   }
 
   async function createOrder() {
-    if (!branchId) {
+    if (!effectiveBranchId) {
       toast.error("Chưa chọn chi nhánh bán hàng.");
+      return;
+    }
+    if (!shiftBanner?.open) {
+      toast.error("Chưa mở ca bán hàng. Vui lòng kiểm két & mở ca trước khi tạo đơn.");
+      return;
+    }
+    if (shiftBanner?.handoverPending) {
+      toast.error("Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca. Vui lòng kiểm két nhận ca trước khi tạo đơn.");
       return;
     }
     if (!cart.length) return;
     setCreating(true);
     try {
       const payload = {
-        branchId,
+        branchId: effectiveBranchId,
         totalAmount: subtotal,
         discountAmount: 0,
         finalAmount: subtotal,
@@ -412,6 +500,9 @@ export default function PosPage() {
       toast.success(`Đã tạo đơn ${detail.receiptNo || "#" + detail.id}.`);
     } catch (err) {
       toast.error(err.message || "Không tạo được đơn hàng.");
+      if (err?.detailCode === "SHIFT_NOT_OPEN" || err?.detailCode === "SHIFT_HANDOVER_PENDING") {
+        checkShiftStatus(effectiveBranchId);
+      }
     } finally {
       setCreating(false);
     }
@@ -428,7 +519,7 @@ export default function PosPage() {
   return (
     <AdminLayout
       menu={menu}
-      branchName={user?.branchName || branches.find((b) => b.id === branchId)?.name || undefined}
+      branchName={user?.branchName || branches.find((b) => b.id === effectiveBranchId)?.name || undefined}
       headerRight={<SessionHeaderRight />}
       userName={user?.fullName || "Quầy thu ngân"}
       userRole={roleLabel(user?.role) || "POS tại quầy"}
@@ -438,16 +529,16 @@ export default function PosPage() {
         screenCode="SCR-04 · POS"
         description="Chọn món, tạo đơn và thu tiền mặt hoặc VietQR."
         actions={
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center justify-content-end flex-wrap gap-2">
             {!user?.branchId ? (
               <Form.Select
-                value={branchId || ""}
+                value={effectiveBranchId || ""}
                 onChange={(e) => {
                   const val = Number(e.target.value);
                   setBranchId(val);
                   localStorage.setItem("scms_pos_branch_id", String(val));
                 }}
-                style={{ minWidth: 200 }}
+                style={{ width: "auto", minWidth: 220 }}
                 disabled={locked}
               >
                 {branches.map((b) => (
@@ -461,7 +552,7 @@ export default function PosPage() {
               variant="outline-secondary"
               className="d-flex align-items-center gap-1"
               onClick={() => openRecipeModal(visibleProducts[0] || products[0])}
-              disabled={products.length === 0}
+              disabled={products.length === 0 || !shiftBanner?.open || Boolean(shiftBanner?.handoverPending)}
             >
               <Icon name="book" size={15} /> Công thức pha chế
             </Button>
@@ -469,65 +560,116 @@ export default function PosPage() {
               variant="outline-primary"
               className="d-flex align-items-center gap-1"
               onClick={() => setShowAttendanceModal(true)}
+              disabled={!effectiveBranchId}
             >
               <Icon name="clock" size={15} /> Check in / Check out
+            </Button>
+            <Button
+              variant="outline-secondary"
+              className="d-flex align-items-center gap-1"
+              onClick={() => navigate("/kiosk")}
+            >
+              <Icon name="arrowRight" size={15} /> Chuyển sang Kiosk chấm công
             </Button>
           </div>
         }
       />
 
-      {loading ? (
+      {status !== "authenticated" || !user || loading || checkingShift || (effectiveBranchId && !shiftBanner) ? (
         <div className="text-center py-5">
-          <Spinner className="me-2" /> Đang tải…
+          <Spinner className="me-2" />{" "}
+          {status === "anonymous"
+            ? "Đang chuyển tới màn Ca & két tiền…"
+            : "Đang kiểm tra trạng thái ca & két…"}
+        </div>
+      ) : !shiftBanner?.open ? (
+        <div className="scms-panel panel-pad text-center mx-auto my-4" style={{ maxWidth: 620 }}>
+          <div className="notice notice--warn mb-3 text-start">
+            <strong>!</strong>
+            <span>
+              {shiftBanner?.error
+                ? shiftBanner.error
+                : "Chưa thể gọi món POS khi chi nhánh chưa kiểm két và mở ca bán hàng (BR-36)."}
+            </span>
+          </div>
+          <h2 className="mb-2">Vui lòng kiểm két &amp; mở ca trước khi bán hàng</h2>
+          <p className="text-muted-scms mb-4">
+            Thu ngân cần đếm tiền mặt đầu ca và xác nhận mở ca tại màn Ca &amp; két tiền để tự động Check-in và mở khóa quầy gọi món POS.
+          </p>
+          <div className="d-flex justify-content-center gap-2 flex-wrap">
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
+            >
+              Kiểm két &amp; Mở ca →
+            </Button>
+            {effectiveBranchId ? (
+              <Button
+                variant="outline-secondary"
+                onClick={() => checkShiftStatus(effectiveBranchId)}
+              >
+                Kiểm tra lại trạng thái ca
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : shiftBanner?.handoverPending ? (
+        <div className="scms-panel panel-pad text-center mx-auto my-4" style={{ maxWidth: 660 }}>
+          <div className="notice notice--warn mb-3 text-start">
+            <strong>!</strong>
+            <span>
+              <strong>Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca</strong> (Ca #{shiftBanner.shift?.id} vẫn{" "}
+              <strong>ĐANG MỞ</strong>).{" "}
+              {shiftBanner.shift?.pendingHandover ? (
+                <>
+                  <strong>{shiftBanner.shift.pendingHandover.fromUserName || "Người giao"}</strong> đã chốt kiểm giao{" "}
+                  <strong>{formatVnd(shiftBanner.shift.pendingHandover.outgoingCountedCash)}</strong> · Lý do:{" "}
+                  <em>{shiftBanner.shift.pendingHandover.reason}</em>.
+                </>
+              ) : null}
+            </span>
+          </div>
+          <h2 className="mb-2">Quầy POS đang tạm khóa để bàn giao két giữa ca</h2>
+          <p className="text-muted-scms mb-4">
+            Người nhận ca mới (Thu ngân khác nhập PIN hoặc Quản lý chi nhánh đứng quầy thay) cần kiểm đếm lại tiền mặt trong két tại màn Ca &amp; két tiền để mở khóa bán hàng trở lại trên cùng ca này.
+          </p>
+          <div className="d-flex justify-content-center gap-2 flex-wrap">
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
+            >
+              Kiểm két nhận ca / Hủy bàn giao →
+            </Button>
+            {effectiveBranchId ? (
+              <Button
+                variant="outline-secondary"
+                onClick={() => checkShiftStatus(effectiveBranchId)}
+              >
+                Kiểm tra lại trạng thái ca
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <>
-          {!user ? (
-            <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
-              <span>
-                <strong>Quầy POS chưa mở khóa Thu ngân:</strong> Mở khóa bằng PIN 4 số để kiểm két đầu ca (so với kết ca cũ), mở ca hoặc chốt tiền mặt cuối ca.
-              </span>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
-              >
-                Kiểm két / Mở khóa Thu ngân (PIN) →
-              </Button>
-            </div>
-          ) : null}
-          {shiftBanner ? (
-            shiftBanner.open ? (
-              <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
-                <span>
-                  <strong>Ca đang mở:</strong>{" "}
-                  {SHIFT_TYPE_META[shiftBanner.shift?.shiftType]?.label || shiftBanner.shift?.shiftType} #
-                  {shiftBanner.shift?.id} · Két hiện tại:{" "}
-                  <strong>{formatVnd(shiftBanner.cashBalance)}</strong>
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline-secondary"
-                  onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
-                >
-                  Quản lý ca &amp; két →
-                </Button>
-              </div>
-            ) : (
-              <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
-                <span>
-                  <strong>Chi nhánh chưa mở ca bán hàng:</strong> Cần mở ca &amp; khai báo tiền đầu ca (BR-36) trước khi thu tiền tại quầy.
-                </span>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => navigate(`/branch/shifts${branchId ? `?branchId=${branchId}` : ""}`)}
-                >
-                  Mở ca &amp; két tiền →
-                </Button>
-              </div>
-            )
-          ) : null}
+          <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
+            <span>
+              <strong>Ca đang mở:</strong>{" "}
+              {SHIFT_TYPE_META[shiftBanner.shift?.shiftType]?.label || shiftBanner.shift?.shiftType} #
+              {shiftBanner.shift?.id}
+              {shiftBanner.shift?.activeCashierName
+                ? ` · Giữ két: ${shiftBanner.shift.activeCashierName}`
+                : ""}{" "}
+              · Két hiện tại: <strong>{formatVnd(shiftBanner.cashBalance)}</strong>
+            </span>
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
+            >
+              Kiểm két &amp; Đóng ca →
+            </Button>
+          </div>
           <div className="grid-2" style={{ gridTemplateColumns: "1fr 400px", alignItems: "start" }}>
           {/* Menu món */}
           <div>
@@ -788,7 +930,7 @@ export default function PosPage() {
                   order={order}
                   onOrderChanged={(nextOrder) => {
                     setOrder(nextOrder);
-                    checkShiftStatus(branchId);
+                    checkShiftStatus(effectiveBranchId);
                   }}
                 />
                 <div className="d-flex gap-2 mt-3">
@@ -895,7 +1037,7 @@ export default function PosPage() {
                               size="sm"
                               variant="outline-secondary"
                               className="mt-2"
-                              onClick={() => loadAttendanceEmployees(branchId || 1, { preserveMessage: true })}
+                              onClick={() => loadAttendanceEmployees(effectiveBranchId || 1, { preserveMessage: true })}
                               disabled={loadingAttEmployees}
                             >
                               Kiểm tra lại trạng thái mở khóa

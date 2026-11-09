@@ -2,29 +2,42 @@ import { useEffect, useState } from "react";
 import { Button, Modal, Spinner, Table } from "react-bootstrap";
 import KpiStrip from "../KpiStrip.jsx";
 import StatusTag from "../StatusTag.jsx";
+import { attendanceApi } from "../../api/attendanceApi.js";
 import { shiftsApi } from "../../api/shiftsApi.js";
 import { POSITION_LABELS } from "../../config/userConstants.js";
 import { formatDate, formatDateTime, formatVnd } from "../../lib/format.js";
 import {
   CASH_TX_META,
+  HANDOVER_STATUS_META,
   SHIFT_STATUS_META,
   SHIFT_TYPE_META,
   actorName,
   formatHm,
   formatSignedVnd,
+  resolveShiftEmployeeRole,
 } from "./shiftUtils.js";
 
 // Modal xem chi tiết đối soát két tiền, nhân sự phân công & nhật ký giao dịch của một ca bất kỳ.
-export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onClose }) {
+export default function ShiftDetailModal({
+  show,
+  shiftId,
+  employeeMap = {},
+  hideAssignedStaff = false,
+  onClose,
+}) {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [assignedIds, setAssignedIds] = useState([]);
+  const [assignedRoles, setAssignedRoles] = useState({});
+  const [fallbackStaffMap, setFallbackStaffMap] = useState({});
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!show || !shiftId) {
       setSummary(null);
       setAssignedIds([]);
+      setAssignedRoles({});
+      setFallbackStaffMap({});
       setError(null);
       return;
     }
@@ -37,19 +50,41 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
       .then(async (res) => {
         if (!alive) return;
         setSummary(res);
-        if (res?.shift?.branchId && res?.shift?.shiftDate) {
-          try {
-            const scheds = await shiftsApi.schedules({
+        if (!hideAssignedStaff && res?.shift?.branchId && res?.shift?.shiftDate) {
+          const [schedRes, kioskRes] = await Promise.allSettled([
+            shiftsApi.schedules({
               branchId: res.shift.branchId,
               startDate: res.shift.shiftDate,
               endDate: res.shift.shiftDate,
-            });
-            if (!alive) return;
-            const found = (scheds || []).find((s) => s.shiftId === res.shift.id);
+            }),
+            attendanceApi.kioskEmployees(res.shift.branchId),
+          ]);
+          if (!alive) return;
+          if (schedRes.status === "fulfilled") {
+            const found = (schedRes.value || []).find((s) => s.shiftId === res.shift.id);
             setAssignedIds(found?.assignedEmployeeIds || []);
-          } catch {
-            if (alive) setAssignedIds([]);
+            setAssignedRoles(found?.employeeRoles || {});
+          } else {
+            setAssignedIds([]);
+            setAssignedRoles({});
           }
+          if (kioskRes.status === "fulfilled" && Array.isArray(kioskRes.value)) {
+            const nextMap = {};
+            for (const emp of kioskRes.value) {
+              nextMap[emp.employeeId] = {
+                id: emp.employeeId,
+                fullName: emp.fullName,
+                roleCode: emp.role,
+              };
+            }
+            setFallbackStaffMap(nextMap);
+          } else {
+            setFallbackStaffMap({});
+          }
+        } else {
+          setAssignedIds([]);
+          setAssignedRoles({});
+          setFallbackStaffMap({});
         }
       })
       .catch((err) => {
@@ -62,7 +97,9 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
     return () => {
       alive = false;
     };
-  }, [show, shiftId]);
+  }, [show, shiftId, hideAssignedStaff]);
+
+  const resolvedEmployeeMap = { ...fallbackStaffMap, ...employeeMap };
 
   const shift = summary?.shift;
   const statusMeta = shift ? SHIFT_STATUS_META[shift.status] || { label: shift.status, variant: "neutral" } : null;
@@ -82,6 +119,9 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
               : `Chi tiết ca #${shiftId || ""}`}
           </Modal.Title>
           {statusMeta ? <StatusTag status={shift.status} label={statusMeta.label} variant={statusMeta.variant} /> : null}
+          {shift?.handoverPending ? (
+            <StatusTag status="PENDING_RECEIVE" label="Chờ bàn giao két" variant="warn" />
+          ) : null}
         </div>
       </Modal.Header>
       <Modal.Body>
@@ -107,10 +147,20 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
                     <span className="text-muted-scms">Mở ca: </span>
                     <strong>
                       {shift.openedAt
-                        ? `${formatDateTime(shift.openedAt)} · ${shift.openedByName || actorName(shift.openedBy, employeeMap)}`
+                        ? `${formatDateTime(shift.openedAt)} · ${shift.openedByName || actorName(shift.openedBy, resolvedEmployeeMap)}`
                         : "Chưa mở"}
                     </strong>
                   </div>
+                  {(shift.activeCashierId || shift.openedBy) ? (
+                    <div className="mt-1">
+                      <span className="text-muted-scms">
+                        {shift.status === "OPEN" ? "Người giữ két hiện tại: " : "Thu ngân giữ két sau cùng: "}
+                      </span>
+                      <strong>
+                        {shift.activeCashierName || actorName(shift.activeCashierId || shift.openedBy, resolvedEmployeeMap)}
+                      </strong>
+                    </div>
+                  ) : null}
                   {shift.previousShiftId || shift.previousClosingCash !== null && shift.previousClosingCash !== undefined ? (
                     <div className="mt-1">
                       <span className="text-muted-scms">Kết ca trước{shift.previousShiftId ? ` (#${shift.previousShiftId})` : ""}: </span>
@@ -128,7 +178,7 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
                     <span className="text-muted-scms">Đóng ca: </span>
                     <strong>
                       {shift.closedAt
-                        ? `${formatDateTime(shift.closedAt)} · ${shift.closedByName || actorName(shift.closedBy, employeeMap)}`
+                        ? `${formatDateTime(shift.closedAt)} · ${shift.closedByName || actorName(shift.closedBy, resolvedEmployeeMap)}`
                         : "—"}
                     </strong>
                   </div>
@@ -168,36 +218,154 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
               />
             </div>
 
-            <div className="mb-3">
-              <div className="text-muted-scms mb-2" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                Nhân sự được phân công ({assignedIds.length})
-              </div>
-              {assignedIds.length === 0 ? (
-                <div className="small text-muted-scms">Chưa có nhân viên được phân công vào ca này.</div>
-              ) : (
-                <div className="d-flex gap-2 flex-wrap">
-                  {assignedIds.map((empId) => {
-                    const emp = employeeMap[empId];
-                    return (
-                      <span
-                        key={empId}
-                        className="px-2 py-1 small"
-                        style={{
-                          border: "1px solid var(--line)",
-                          borderRadius: "var(--radius-xs)",
-                          background: "var(--surface)",
-                        }}
-                      >
-                        <strong>{emp?.fullName || `NV #${empId}`}</strong>
-                        {emp?.roleCode ? (
-                          <span className="text-muted-scms"> · {POSITION_LABELS[emp.roleCode] || emp.roleCode}</span>
-                        ) : null}
-                      </span>
-                    );
-                  })}
+            {!hideAssignedStaff ? (
+              <div className="mb-3">
+                <div className="text-muted-scms mb-2" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  Nhân sự được phân công ({assignedIds.length})
                 </div>
-              )}
-            </div>
+                {assignedIds.length === 0 ? (
+                  <div className="small text-muted-scms">Chưa có nhân viên được phân công vào ca này.</div>
+                ) : (
+                  <div className="d-flex gap-2 flex-wrap">
+                    {assignedIds.map((empId) => {
+                      const emp = resolvedEmployeeMap[empId];
+                      const { roleLabel, baseLabel, isOverride } = resolveShiftEmployeeRole(
+                        empId,
+                        { employeeRoles: assignedRoles },
+                        resolvedEmployeeMap,
+                        POSITION_LABELS,
+                      );
+                      return (
+                        <span
+                          key={empId}
+                          className="px-2 py-1 small"
+                          style={{
+                            border: isOverride ? "1px solid var(--accent)" : "1px solid var(--line)",
+                            borderRadius: "var(--radius-xs)",
+                            background: isOverride ? "var(--accent-soft)" : "var(--surface)",
+                          }}
+                          title={
+                            isOverride
+                              ? `Kiêm ${roleLabel} riêng trong ca này (chức danh gốc: ${baseLabel})`
+                              : undefined
+                          }
+                        >
+                          <strong>{emp?.fullName || `NV #${empId}`}</strong>
+                          {roleLabel ? (
+                            <span className={isOverride ? "" : "text-muted-scms"}>
+                              {" "}· {isOverride ? `${roleLabel} (ca này · gốc ${baseLabel})` : roleLabel}
+                            </span>
+                          ) : null}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {summary.handovers?.length > 0 ? (
+              <div className="mb-3">
+                <div className="text-muted-scms mb-2" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  Lịch sử bàn giao két giữa ca ({summary.handovers.length})
+                </div>
+                <div className="scms-panel">
+                  <div className="table-responsive">
+                    <Table hover className="mb-0">
+                      <thead>
+                        <tr>
+                          <th>Thời gian</th>
+                          <th>Giao → Nhận</th>
+                          <th className="num">Kiểm giao / Nhận</th>
+                          <th>Đối soát</th>
+                          <th>Lý do / Ghi chú</th>
+                          <th>Trạng thái</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summary.handovers.map((h) => {
+                          const hMeta = HANDOVER_STATUS_META[h.status] || { label: h.status, variant: "neutral" };
+                          const hasOutVar =
+                            h.outgoingVariance !== null &&
+                            h.outgoingVariance !== undefined &&
+                            Math.abs(Number(h.outgoingVariance)) >= 0.01;
+                          const hasInCash = h.incomingCountedCash !== null && h.incomingCountedCash !== undefined;
+                          const hasInOutVar =
+                            hasInCash &&
+                            h.incomingVarianceFromOut !== null &&
+                            h.incomingVarianceFromOut !== undefined &&
+                            Math.abs(Number(h.incomingVarianceFromOut)) >= 0.01;
+                          return (
+                            <tr key={h.id}>
+                              <td className="small">
+                                <div>Giao: {formatDateTime(h.outgoingAt)}</div>
+                                {h.incomingAt ? (
+                                  <div className="text-muted-scms">Nhận: {formatDateTime(h.incomingAt)}</div>
+                                ) : h.cancelledAt ? (
+                                  <div className="text-muted-scms">Hủy: {formatDateTime(h.cancelledAt)}</div>
+                                ) : null}
+                              </td>
+                              <td className="small">
+                                <div>
+                                  <strong>{h.fromUserName || actorName(h.fromUserId, resolvedEmployeeMap)}</strong>
+                                  {" → "}
+                                  <strong>
+                                    {h.toUserName || (h.toUserId ? actorName(h.toUserId, resolvedEmployeeMap) : "Chờ nhận")}
+                                  </strong>
+                                </div>
+                                {h.cancelledByName ? (
+                                  <div className="text-muted-scms">Hủy bởi: {h.cancelledByName}</div>
+                                ) : null}
+                              </td>
+                              <td className="num small">
+                                <div>
+                                  Giao: <strong>{formatVnd(h.outgoingCountedCash)}</strong>
+                                </div>
+                                <div className="text-muted-scms">Sổ: {formatVnd(h.expectedCashAtOut)}</div>
+                                {hasInCash ? (
+                                  <div>
+                                    Nhận: <strong>{formatVnd(h.incomingCountedCash)}</strong>
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="small">
+                                <div>
+                                  Giao vs sổ:{" "}
+                                  <strong>{hasOutVar ? formatSignedVnd(h.outgoingVariance) : "Khớp"}</strong>
+                                </div>
+                                {hasInCash ? (
+                                  <div>
+                                    Nhận vs giao:{" "}
+                                    <strong>{hasInOutVar ? formatSignedVnd(h.incomingVarianceFromOut) : "Khớp 100%"}</strong>
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="small">
+                                <div>
+                                  <strong>{h.reason}</strong>
+                                </div>
+                                {h.outgoingNote ? (
+                                  <div className="text-muted-scms">Giao: {h.outgoingNote}</div>
+                                ) : null}
+                                {h.incomingNote ? (
+                                  <div className="text-muted-scms">Nhận: {h.incomingNote}</div>
+                                ) : null}
+                                {h.cancelReason ? (
+                                  <div className="text-muted-scms">Hủy: {h.cancelReason}</div>
+                                ) : null}
+                              </td>
+                              <td>
+                                <StatusTag status={h.status} variant={hMeta.variant} label={hMeta.label} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <div>
               <div className="text-muted-scms mb-2" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
@@ -236,10 +404,10 @@ export default function ShiftDetailModal({ show, shiftId, employeeMap = {}, onCl
                               </td>
                               <td>{tx.reason || "—"}</td>
                               <td className="small">
-                                <div>{tx.createdByName || actorName(tx.createdBy, employeeMap)}</div>
+                                <div>{tx.createdByName || actorName(tx.createdBy, resolvedEmployeeMap)}</div>
                                 {tx.approvedBy ? (
                                   <div className="text-muted-scms">
-                                    Duyệt PIN: {tx.approvedByName || actorName(tx.approvedBy, employeeMap)}
+                                    Duyệt PIN: {tx.approvedByName || actorName(tx.approvedBy, resolvedEmployeeMap)}
                                   </div>
                                 ) : null}
                               </td>

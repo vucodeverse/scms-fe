@@ -3,9 +3,9 @@ import { toIsoDate } from "../reports/reportKit.js";
 export const SHIFT_TYPES = ["MORNING", "EVENING", "NIGHT"];
 
 export const SHIFT_TYPE_META = {
-  MORNING: { label: "Ca sáng", start: "07:00", end: "14:00", window: "07:00 – 14:00" },
-  EVENING: { label: "Ca chiều", start: "14:30", end: "22:30", window: "14:30 – 22:30" },
-  NIGHT: { label: "Ca tối", start: "22:00", end: "06:00", window: "22:00 – 06:00 (+1 ngày)" },
+  MORNING: { label: "Ca sáng", start: "07:00", end: "12:30", window: "07:00 – 12:30" },
+  EVENING: { label: "Ca chiều", start: "12:30", end: "18:00", window: "12:30 – 18:00" },
+  NIGHT: { label: "Ca tối", start: "18:00", end: "23:00", window: "18:00 – 23:00" },
 };
 
 export const SHIFT_STATUS_META = {
@@ -20,6 +20,12 @@ export const CASH_TX_META = {
   CASH_OUT: { label: "Rút tiền két", variant: "warn", sign: "−" },
   REFUND_OUT: { label: "Hoàn tiền", variant: "warn", sign: "−" },
   CLOSE: { label: "Đóng ca", variant: "dark", sign: "" },
+};
+
+export const HANDOVER_STATUS_META = {
+  PENDING_RECEIVE: { label: "Chờ nhận két", variant: "warn" },
+  COMPLETED: { label: "Đã bàn giao", variant: "success" },
+  CANCELLED: { label: "Đã hủy", variant: "neutral" },
 };
 
 const WEEKDAY_SHORT = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
@@ -120,6 +126,24 @@ export function actorName(id, employeeMap, fallbackPrefix = "NV") {
   return emp?.fullName || `${fallbackPrefix} #${id}`;
 }
 
+export function resolveShiftEmployeeRole(empId, shift, employeeMap, positionLabels = {}) {
+  const emp = employeeMap?.[empId];
+  const baseRole = emp?.roleCode || null;
+  const assignedRole =
+    shift?.employeeRoles?.[empId] ?? shift?.employeeRoles?.[String(empId)] ?? null;
+  const roleInShift = assignedRole || baseRole;
+  const isOverride = Boolean(assignedRole && baseRole && assignedRole !== baseRole);
+  const roleLabel = (roleInShift && positionLabels?.[roleInShift]) || roleInShift || "";
+  const baseLabel = (baseRole && positionLabels?.[baseRole]) || baseRole || "";
+  return {
+    baseRole,
+    roleInShift,
+    isOverride,
+    roleLabel,
+    baseLabel,
+  };
+}
+
 export function formatSignedVnd(amount) {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return "—";
   const n = Number(amount);
@@ -127,4 +151,67 @@ export function formatSignedVnd(amount) {
   if (n > 0) return `+${absFormatted} VNĐ`;
   if (n < 0) return `−${absFormatted} VNĐ`;
   return "0 VNĐ";
+}
+
+export function hasShiftTimeOverlap(startA, endA, startB, endB) {
+  const s1 = startA ? new Date(startA).getTime() : NaN;
+  const e1 = endA ? new Date(endA).getTime() : NaN;
+  const s2 = startB ? new Date(startB).getTime() : NaN;
+  const e2 = endB ? new Date(endB).getTime() : NaN;
+  if ([s1, e1, s2, e2].some((v) => Number.isNaN(v))) return false;
+  return s1 < e2 && e1 > s2;
+}
+
+export function isShiftPresetMismatch(shift) {
+  const meta = SHIFT_TYPE_META[shift?.shiftType];
+  if (!meta || !shift?.plannedStart || !shift?.plannedEnd) return false;
+  return formatHm(shift.plannedStart) !== meta.start || formatHm(shift.plannedEnd) !== meta.end;
+}
+
+export function analyzeScheduleConflicts(schedules = []) {
+  const mismatchIds = new Set();
+  const overlapIds = new Set();
+  const slotDuplicateIds = new Set();
+  const employeeConflictsByShift = {};
+
+  const activeBySlot = {};
+  for (const s of schedules) {
+    if (s.status !== "CLOSED") {
+      if (isShiftPresetMismatch(s)) {
+        mismatchIds.add(s.shiftId);
+      }
+      const key = `${s.shiftDate}|${s.shiftType}`;
+      if (!activeBySlot[key]) activeBySlot[key] = [];
+      activeBySlot[key].push(s);
+    }
+  }
+  for (const group of Object.values(activeBySlot)) {
+    if (group.length > 1) {
+      for (const s of group) slotDuplicateIds.add(s.shiftId);
+    }
+  }
+
+  for (let i = 0; i < schedules.length; i += 1) {
+    const a = schedules[i];
+    if (a.status === "CLOSED") continue;
+    for (let j = i + 1; j < schedules.length; j += 1) {
+      const b = schedules[j];
+      if (b.status === "CLOSED") continue;
+      if (hasShiftTimeOverlap(a.plannedStart, a.plannedEnd, b.plannedStart, b.plannedEnd)) {
+        overlapIds.add(a.shiftId);
+        overlapIds.add(b.shiftId);
+        const bSet = new Set(b.assignedEmployeeIds || []);
+        for (const empId of a.assignedEmployeeIds || []) {
+          if (bSet.has(empId)) {
+            if (!employeeConflictsByShift[a.shiftId]) employeeConflictsByShift[a.shiftId] = new Set();
+            if (!employeeConflictsByShift[b.shiftId]) employeeConflictsByShift[b.shiftId] = new Set();
+            employeeConflictsByShift[a.shiftId].add(empId);
+            employeeConflictsByShift[b.shiftId].add(empId);
+          }
+        }
+      }
+    }
+  }
+
+  return { mismatchIds, overlapIds, slotDuplicateIds, employeeConflictsByShift };
 }

@@ -223,13 +223,23 @@ export function CashAdjustmentModal({
 }
 
 // Modal đóng ca & kiểm kê đối soát két tiền (UC27, BR-38, BR-39).
-export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
+// Thu ngân nhập lại PIN cá nhân để xác thực đóng ca & tự động Check-out.
+export function CloseShiftModal({
+  show,
+  summary,
+  userRole = null,
+  isCheckedIn = false,
+  onClose,
+  onSuccess,
+}) {
   const toast = useToast();
   const shift = summary?.shift;
   const expectedCash = Number(summary?.currentCashBalance ?? shift?.expectedCash ?? shift?.openingCash ?? 0);
+  const requirePin = userRole === "CASHIER";
 
   const [countedCash, setCountedCash] = useState("");
   const [discrepancyReason, setDiscrepancyReason] = useState("");
+  const [pin, setPin] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [apiError, setApiError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -238,6 +248,7 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
     if (!show) return;
     setCountedCash("");
     setDiscrepancyReason("");
+    setPin("");
     setFieldErrors({});
     setApiError("");
   }, [show, shift?.id]);
@@ -250,12 +261,20 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
     e.preventDefault();
     if (!shift?.id || busy) return;
 
+    const cleanPin = pin.trim();
     const errs = {};
     if (countedCash === "" || Number.isNaN(parsedCounted) || parsedCounted < 0) {
       errs.countedCash = "Vui lòng nhập số tiền mặt thực đếm >= 0.";
     }
     if (hasVariance && !discrepancyReason.trim()) {
       errs.discrepancyReason = "Phát hiện chênh lệch két — bắt buộc nhập lý do giải trình (BR-38).";
+    }
+    if (requirePin) {
+      if (!cleanPin) {
+        errs.pin = "Vui lòng nhập mã PIN cá nhân để xác nhận đóng ca & Check-out.";
+      } else if (!/^[0-9]{4,6}$/.test(cleanPin)) {
+        errs.pin = "Mã PIN phải gồm từ 4 đến 6 chữ số.";
+      }
     }
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
@@ -269,11 +288,13 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
       await shiftsApi.close(shift.id, {
         countedCash: parsedCounted,
         discrepancyReason: discrepancyReason.trim() || null,
+        ...(cleanPin ? { pin: cleanPin } : {}),
       });
+      const checkOutNote = requirePin && isCheckedIn ? " & Check-out ca làm việc" : "";
       toast.success(
         hasVariance
-          ? `Đã đóng ca #${shift.id} (chênh lệch ${formatSignedVnd(variance)}).`
-          : `Đã đóng ca #${shift.id} — két khớp hoàn toàn.`,
+          ? `Đã đóng ca #${shift.id}${checkOutNote} (chênh lệch ${formatSignedVnd(variance)}).`
+          : `Đã đóng ca #${shift.id}${checkOutNote} — két khớp hoàn toàn.`,
       );
       onClose?.();
       await onSuccess?.();
@@ -281,8 +302,12 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
       const nextFields = {};
       if (err.fieldError?.("countedCash")) nextFields.countedCash = err.fieldError("countedCash");
       if (err.fieldError?.("discrepancyReason")) nextFields.discrepancyReason = err.fieldError("discrepancyReason");
+      if (err.fieldError?.("pin")) nextFields.pin = err.fieldError("pin");
       if (err.detailCode === "REASON_REQUIRED") {
         nextFields.discrepancyReason = err.message;
+      }
+      if (err.code === "INVALID_PIN" || err.code === "PIN_LOCKED") {
+        nextFields.pin = err.message;
       }
       setFieldErrors(nextFields);
       setApiError(err.message || "Không đóng được ca làm việc.");
@@ -303,6 +328,15 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
           <div className="small text-muted-scms mb-3">
             Ngày {formatDate(shift?.shiftDate)} · Kiểm đếm tiền mặt thực tế trong két và đối chiếu với sổ sách theo quy định BR-38.
           </div>
+
+          {shift?.handoverPending ? (
+            <div className="notice notice--warn mb-3">
+              <strong>!</strong>
+              <span>
+                Ca đang có phiếu <strong>bàn giao két chờ nhận</strong>. Khi Quản lý/COO xác nhận đóng hẳn ca, phiếu bàn giao đang chờ sẽ tự động hủy để chốt sổ ca này.
+              </span>
+            </div>
+          ) : null}
 
           {apiError ? (
             <div className="notice notice--warn mb-3">
@@ -402,7 +436,7 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
                 ? "Bắt buộc theo BR-38 khi tiền thực đếm khác tiền dự kiến."
                 : "Không bắt buộc khi tiền két khớp."
             }
-            className="mb-0"
+            className={requirePin ? "mb-3" : "mb-0"}
           >
             <Form.Control
               as="textarea"
@@ -417,6 +451,39 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
               disabled={busy}
             />
           </FormField>
+
+          {requirePin ? (
+            <FormField
+              label={
+                isCheckedIn
+                  ? "Mã PIN Thu ngân (4–6 số) để đóng ca & Check-out"
+                  : "Mã PIN Thu ngân (4–6 số) xác nhận đóng ca"
+              }
+              required
+              error={fieldErrors.pin}
+              help={
+                isCheckedIn
+                  ? "Nhập lại mã PIN cá nhân của bạn để xác nhận đóng ca két và tự động Check-out kết thúc ca làm việc."
+                  : "Nhập lại mã PIN cá nhân của bạn để xác nhận đóng ca két."
+              }
+              className="mb-0"
+            >
+              <Form.Control
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="••••"
+                value={pin}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setPin(digits);
+                  setFieldErrors((f) => ({ ...f, pin: null }));
+                  setApiError("");
+                }}
+                disabled={busy}
+              />
+            </FormField>
+          ) : null}
         </Modal.Body>
         <Modal.Footer>
           <Button type="button" variant="outline-secondary" onClick={onClose} disabled={busy}>
@@ -424,7 +491,7 @@ export function CloseShiftModal({ show, summary, onClose, onSuccess }) {
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>
             {busy ? <Spinner size="sm" className="me-2" /> : null}
-            Xác nhận đóng ca
+            {requirePin && isCheckedIn ? "Xác nhận đóng ca & Check-out" : "Xác nhận đóng ca"}
           </Button>
         </Modal.Footer>
       </Form>

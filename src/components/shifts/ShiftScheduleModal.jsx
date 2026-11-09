@@ -11,6 +11,8 @@ import {
   SHIFT_TYPES,
   SHIFT_TYPE_META,
   buildShiftInstants,
+  formatHm,
+  hasShiftTimeOverlap,
   toTimeInput,
   todayIso,
 } from "./shiftUtils.js";
@@ -30,6 +32,7 @@ export default function ShiftScheduleModal({
   initialShift = null,
   branchId,
   employees = [],
+  schedules = [],
   checkedInIds = new Set(),
   onClose,
   onSuccess,
@@ -46,6 +49,7 @@ export default function ShiftScheduleModal({
   const [customTimes, setCustomTimes] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState([]);
+  const [employeeRoles, setEmployeeRoles] = useState({});
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
@@ -68,6 +72,7 @@ export default function ShiftScheduleModal({
       setCustomTimes(false);
     }
     setSelectedIds(Array.isArray(initialShift?.assignedEmployeeIds) ? [...initialShift.assignedEmployeeIds] : []);
+    setEmployeeRoles(initialShift?.employeeRoles ? { ...initialShift.employeeRoles } : {});
     setSearch("");
     setRoleFilter("");
     setFieldErrors({});
@@ -88,14 +93,78 @@ export default function ShiftScheduleModal({
     });
   }, [activeEmployees, roleFilter, search]);
 
-  const previewTiming = useMemo(
-    () => buildShiftInstants(shiftDate, startTime, endTime),
-    [shiftDate, startTime, endTime],
+  const effectiveTiming = useMemo(() => {
+    const built = buildShiftInstants(shiftDate, startTime, endTime);
+    const sameDate = isEdit && shiftDate === initialShift?.shiftDate;
+    const keepStart =
+      sameDate && initialShift?.plannedStart && startTime === toTimeInput(initialShift.plannedStart);
+    const keepEnd =
+      sameDate && initialShift?.plannedEnd && endTime === toTimeInput(initialShift.plannedEnd);
+    return {
+      plannedStart: keepStart ? initialShift.plannedStart : built.plannedStart,
+      plannedEnd: keepEnd ? initialShift.plannedEnd : built.plannedEnd,
+      overnight: built.overnight,
+      endDate: built.endDate,
+    };
+  }, [shiftDate, startTime, endTime, isEdit, initialShift]);
+
+  const currentTypeMeta = SHIFT_TYPE_META[shiftType] || SHIFT_TYPE_META.MORNING;
+  const matchesPreset =
+    startTime === currentTypeMeta.start && endTime === currentTypeMeta.end;
+
+  const duplicateSlotShift = useMemo(() => {
+    if (!shiftDate || !shiftType) return null;
+    if (isEdit && initialShift?.status !== "SCHEDULED") return null;
+    return (
+      schedules.find(
+        (s) =>
+          s.shiftId !== initialShift?.shiftId &&
+          s.status !== "CLOSED" &&
+          s.shiftDate === shiftDate &&
+          s.shiftType === shiftType,
+      ) || null
+    );
+  }, [schedules, shiftDate, shiftType, isEdit, initialShift]);
+
+  const employeeConflictMap = useMemo(() => {
+    const map = {};
+    if (!effectiveTiming.plannedStart || !effectiveTiming.plannedEnd) return map;
+    for (const s of schedules) {
+      if (s.shiftId === initialShift?.shiftId || s.status === "CLOSED") continue;
+      if (
+        !hasShiftTimeOverlap(
+          effectiveTiming.plannedStart,
+          effectiveTiming.plannedEnd,
+          s.plannedStart,
+          s.plannedEnd,
+        )
+      ) {
+        continue;
+      }
+      for (const empId of s.assignedEmployeeIds || []) {
+        if (!map[empId]) map[empId] = s;
+      }
+    }
+    return map;
+  }, [schedules, effectiveTiming.plannedStart, effectiveTiming.plannedEnd, initialShift?.shiftId]);
+
+  const selectedConflicts = useMemo(
+    () =>
+      selectedIds
+        .map((id) => ({
+          emp: employees.find((e) => e.id === id),
+          shift: employeeConflictMap[id],
+        }))
+        .filter((item) => Boolean(item.shift)),
+    [selectedIds, employees, employeeConflictMap],
   );
 
   function handleShiftTypeChange(nextType) {
+    const prevMeta = SHIFT_TYPE_META[shiftType];
+    const matchesPrevPreset =
+      prevMeta && startTime === prevMeta.start && endTime === prevMeta.end;
     setShiftType(nextType);
-    if (!isEdit && !customTimes) {
+    if (!isOpenShift && ((!isEdit && !customTimes) || matchesPrevPreset)) {
       const meta = SHIFT_TYPE_META[nextType];
       if (meta) {
         setStartTime(meta.start);
@@ -132,14 +201,8 @@ export default function ShiftScheduleModal({
     if (!startTime || !endTime) errs.time = "Vui lòng nhập đầy đủ giờ bắt đầu và kết thúc.";
     else if (startTime === endTime) errs.time = "Giờ kết thúc phải khác giờ bắt đầu.";
 
-    const built = buildShiftInstants(shiftDate, startTime, endTime);
-    const sameDate = isEdit && shiftDate === initialShift?.shiftDate;
-    const keepStart =
-      sameDate && initialShift?.plannedStart && startTime === toTimeInput(initialShift.plannedStart);
-    const keepEnd =
-      sameDate && initialShift?.plannedEnd && endTime === toTimeInput(initialShift.plannedEnd);
-    const plannedStart = keepStart ? initialShift.plannedStart : built.plannedStart;
-    const plannedEnd = keepEnd ? initialShift.plannedEnd : built.plannedEnd;
+    const plannedStart = effectiveTiming.plannedStart;
+    const plannedEnd = effectiveTiming.plannedEnd;
     if (!plannedStart || !plannedEnd || new Date(plannedStart) >= new Date(plannedEnd)) {
       errs.time = "Khung giờ ca không hợp lệ.";
     }
@@ -149,9 +212,27 @@ export default function ShiftScheduleModal({
       return;
     }
 
+    if (duplicateSlotShift) {
+      const dupMeta = SHIFT_TYPE_META[duplicateSlotShift.shiftType] || currentTypeMeta;
+      setApiError(
+        `Ngày ${formatDate(shiftDate)} đã có ${dupMeta.label} #${duplicateSlotShift.shiftId} đang ${
+          duplicateSlotShift.status === "OPEN" ? "mở" : "lên lịch"
+        }. Vui lòng chỉnh sửa ca hiện có thay vì tạo trùng ca.`,
+      );
+      return;
+    }
+
     setBusy(true);
     setFieldErrors({});
     setApiError("");
+    const cleanedRoles = {};
+    for (const id of selectedIds) {
+      const emp = employees.find((item) => item.id === id);
+      const chosen = employeeRoles[id] ?? employeeRoles[String(id)];
+      if (chosen && chosen !== emp?.roleCode) {
+        cleanedRoles[id] = chosen;
+      }
+    }
     try {
       if (isEdit) {
         await shiftsApi.updateSchedule(initialShift.shiftId, {
@@ -160,6 +241,7 @@ export default function ShiftScheduleModal({
           plannedStart,
           plannedEnd,
           assignedEmployeeIds: selectedIds,
+          employeeRoles: cleanedRoles,
         });
         toast.success(`Đã cập nhật lịch & phân công cho ca #${initialShift.shiftId}.`);
       } else {
@@ -170,6 +252,7 @@ export default function ShiftScheduleModal({
           plannedStart,
           plannedEnd,
           assignedEmployeeIds: selectedIds,
+          employeeRoles: cleanedRoles,
         });
         toast.success(`Đã tạo ${SHIFT_TYPE_META[shiftType]?.label || shiftType} (#${res.shiftId}) ngày ${formatDate(shiftDate)}.`);
       }
@@ -206,6 +289,22 @@ export default function ShiftScheduleModal({
               <strong>!</strong>
               <span>
                 Ca này đang mở bán hàng — có thể điều chỉnh khung giờ dự kiến và gán/bớt nhân viên trực ca; ngày làm việc và loại ca được giữ nguyên.
+              </span>
+            </div>
+          ) : null}
+
+          {duplicateSlotShift ? (
+            <div className="notice notice--warn mb-3">
+              <strong>!</strong>
+              <span>
+                Ngày <strong>{formatDate(shiftDate)}</strong> đã có{" "}
+                <strong>
+                  {(SHIFT_TYPE_META[duplicateSlotShift.shiftType] || currentTypeMeta).label} #
+                  {duplicateSlotShift.shiftId}
+                </strong>{" "}
+                ({SHIFT_STATUS_META[duplicateSlotShift.status]?.label || duplicateSlotShift.status},{" "}
+                {formatHm(duplicateSlotShift.plannedStart)}–{formatHm(duplicateSlotShift.plannedEnd)}). Hãy chỉnh sửa ca
+                hiện có thay vì tạo trùng khung ca.
               </span>
             </div>
           ) : null}
@@ -261,8 +360,8 @@ export default function ShiftScheduleModal({
               label="Giờ kết thúc"
               required
               help={
-                previewTiming.overnight
-                  ? `Qua ngày hôm sau (kết thúc lúc ${endTime} ngày ${formatDate(previewTiming.endDate)})`
+                effectiveTiming.overnight
+                  ? `Qua ngày hôm sau (kết thúc lúc ${endTime} ngày ${formatDate(effectiveTiming.endDate)})`
                   : "Trong cùng ngày làm việc"
               }
             >
@@ -279,6 +378,31 @@ export default function ShiftScheduleModal({
             </FormField>
           </div>
 
+          {!matchesPreset ? (
+            <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+              <span>
+                <strong>Lệch khung chuẩn:</strong> Khung đang chọn ({startTime || "—"}–{endTime || "—"}) khác giờ
+                chuẩn của <strong>{currentTypeMeta.label}</strong> ({currentTypeMeta.window}), có thể gây trùng lịch với
+                ca kế tiếp.
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline-secondary"
+                disabled={busy}
+                onClick={() => {
+                  setStartTime(currentTypeMeta.start);
+                  setEndTime(currentTypeMeta.end);
+                  setCustomTimes(false);
+                  setFieldErrors((f) => ({ ...f, time: null }));
+                  setApiError("");
+                }}
+              >
+                Đặt về {currentTypeMeta.start} – {currentTypeMeta.end}
+              </Button>
+            </div>
+          ) : null}
+
           <div className="scms-divider my-3" />
 
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
@@ -287,7 +411,7 @@ export default function ShiftScheduleModal({
                 Nhân viên được gán vào ca ({selectedIds.length}/{activeEmployees.length})
               </div>
               <div className="small text-muted-scms">
-                Hệ thống tự động kiểm tra trùng khung giờ nếu nhân viên đã có ca khác (BR-15).
+                Hệ thống tự kiểm tra trùng khung giờ (BR-15) và cho phép chọn vai trò kiêm nhiệm riêng trong ca mà không đổi chức danh gốc sau hết ca.
               </div>
             </div>
             <div className="d-flex gap-1">
@@ -328,6 +452,24 @@ export default function ShiftScheduleModal({
             <div className="field-error mb-2">{fieldErrors.assignedEmployeeIds}</div>
           ) : null}
 
+          {selectedConflicts.length > 0 ? (
+            <div className="notice notice--warn mb-2">
+              <strong>!</strong>
+              <span>
+                Nhân viên đang chọn bị trùng giờ với ca khác (BR-15):{" "}
+                {selectedConflicts
+                  .map(
+                    ({ emp, shift }) =>
+                      `${emp?.fullName || `NV`} (${SHIFT_TYPE_META[shift.shiftType]?.label || shift.shiftType} ${formatHm(
+                        shift.plannedStart,
+                      )}–${formatHm(shift.plannedEnd)})`,
+                  )
+                  .join(", ")}
+                . Hãy bỏ chọn hoặc chỉnh lại khung giờ của ca bị lệch chuẩn.
+              </span>
+            </div>
+          ) : null}
+
           <div
             style={{
               maxHeight: 250,
@@ -349,18 +491,24 @@ export default function ShiftScheduleModal({
               filteredEmployees.map((emp, idx) => {
                 const checked = selectedIds.includes(emp.id);
                 const checkedIn = (isToday || shiftDate === todayIso()) && (checkedInIds.has(emp.id) || emp.isCheckedIn);
+                const conflictShift = employeeConflictMap[emp.id];
+                const currentRoleInShift =
+                  employeeRoles[emp.id] ?? employeeRoles[String(emp.id)] ?? emp.roleCode ?? "";
+                const canCustomizeRole = checked && emp.roleCode !== "COO";
                 return (
-                  <label
+                  <div
                     key={emp.id}
-                    htmlFor={`shift-emp-${emp.id}`}
                     className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 m-0"
                     style={{
-                      cursor: busy ? "default" : "pointer",
                       background: checked ? "var(--accent-soft)" : "var(--surface)",
                       borderTop: idx === 0 ? "none" : "1px solid var(--line)",
                     }}
                   >
-                    <div className="d-flex align-items-center gap-2">
+                    <label
+                      htmlFor={`shift-emp-${emp.id}`}
+                      className="d-flex align-items-center gap-2 mb-0 flex-grow-1"
+                      style={{ cursor: busy ? "default" : "pointer" }}
+                    >
                       <Form.Check
                         id={`shift-emp-${emp.id}`}
                         type="checkbox"
@@ -373,13 +521,57 @@ export default function ShiftScheduleModal({
                           {emp.fullName}
                         </div>
                         <div className="text-muted-scms" style={{ fontSize: 11 }}>
-                          {POSITION_LABELS[emp.roleCode] || emp.roleCode || "Nhân viên"}
+                          Chức danh gốc: {POSITION_LABELS[emp.roleCode] || emp.roleCode || "Nhân viên"}
                           {emp.phone ? ` · ${emp.phone}` : ""}
                           {emp.hasPin === false ? " · Chưa đặt PIN" : ""}
                         </div>
                       </div>
-                    </div>
-                    <div className="d-flex align-items-center gap-2">
+                    </label>
+                    <div className="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                      {canCustomizeRole ? (
+                        <Form.Select
+                          size="sm"
+                          value={currentRoleInShift}
+                          disabled={busy}
+                          aria-label={`Vai trò trong ca cho ${emp.fullName}`}
+                          style={{ width: "auto", minWidth: 165, fontSize: 12 }}
+                          onChange={(e) => {
+                            const nextRole = e.target.value;
+                            setEmployeeRoles((prev) => {
+                              const next = { ...prev };
+                              delete next[String(emp.id)];
+                              if (!nextRole || nextRole === emp.roleCode) {
+                                delete next[emp.id];
+                              } else {
+                                next[emp.id] = nextRole;
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          <option value={emp.roleCode || ""}>
+                            Đúng chức danh ({POSITION_LABELS[emp.roleCode] || emp.roleCode || "Mặc định"})
+                          </option>
+                          {emp.roleCode !== "BARISTA" ? (
+                            <option value="BARISTA">Kiêm Pha chế (riêng ca này)</option>
+                          ) : null}
+                          {emp.roleCode !== "WAITER" ? (
+                            <option value="WAITER">Kiêm Phục vụ (riêng ca này)</option>
+                          ) : null}
+                          {emp.roleCode !== "CASHIER" ? (
+                            <option value="CASHIER">Hỗ trợ Thu ngân (riêng ca này)</option>
+                          ) : null}
+                        </Form.Select>
+                      ) : null}
+                      {conflictShift ? (
+                        <StatusTag
+                          status="CONFLICT"
+                          variant="warn"
+                          label={`Trùng ${SHIFT_TYPE_META[conflictShift.shiftType]?.label || conflictShift.shiftType} (${formatHm(
+                            conflictShift.plannedStart,
+                          )}–${formatHm(conflictShift.plannedEnd)})`}
+                        />
+                      ) : null}
                       {checkedIn ? (
                         <StatusTag status="CHECKED_IN" variant="success" label="Đang trong ca" />
                       ) : null}
@@ -387,7 +579,7 @@ export default function ShiftScheduleModal({
                         <StatusTag status="ASSIGNED" variant="dark" label="Đã gán" />
                       ) : null}
                     </div>
-                  </label>
+                  </div>
                 );
               })
             )}

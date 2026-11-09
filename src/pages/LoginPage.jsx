@@ -129,7 +129,8 @@ export default function LoginPage() {
               type="button"
               className="link-btn fw-bold"
               style={{ fontSize: 14 }}
-              onClick={() => navigate("/pos")}
+              onClick={() => navigate("/branch/shifts")}
+              title="Vào màn Ca & két tiền để kiểm két và mở ca trước khi gọi món POS"
             >
               <Icon name="pos" size={16} /> Mở quầy bán hàng (POS)
             </button>

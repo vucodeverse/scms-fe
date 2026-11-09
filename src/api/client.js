@@ -111,7 +111,10 @@ http.interceptors.response.use(
     const original = error?.config;
     const status = error?.response?.status;
     const url = original?.url || "";
+    const errCode = error?.response?.data?.code;
+    const isPinVerifyError = errCode === "INVALID_PIN" || errCode === "PIN_LOCKED";
     const isAuthCall =
+      isPinVerifyError ||
       url.includes("/auth/refresh") ||
       url.includes("/auth/login") ||
       url.includes("/auth/pin-login");

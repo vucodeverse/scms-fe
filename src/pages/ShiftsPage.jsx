@@ -11,7 +11,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
-import { POS_MENU, buildMenu } from "../config/menu.js";
+import { buildMenu, buildPosMenu } from "../config/menu.js";
 import { BRANCH_STATUS_LABELS, BRANCH_STATUS_VARIANTS } from "../config/userConstants.js";
 import { formatDateTime, formatVnd } from "../lib/format.js";
 import { branchesApi } from "../api/branchesApi.js";
@@ -23,6 +23,11 @@ import ShiftOperationsTab from "../components/shifts/ShiftOperationsTab.jsx";
 import ShiftScheduleTab from "../components/shifts/ShiftScheduleTab.jsx";
 import ShiftHistoryTab from "../components/shifts/ShiftHistoryTab.jsx";
 import { CashAdjustmentModal, CloseShiftModal } from "../components/shifts/ShiftCashModals.jsx";
+import {
+  AcceptHandoverModal,
+  CancelHandoverModal,
+  InitiateHandoverModal,
+} from "../components/shifts/ShiftHandoverModals.jsx";
 import ShiftScheduleModal from "../components/shifts/ShiftScheduleModal.jsx";
 import ShiftDetailModal from "../components/shifts/ShiftDetailModal.jsx";
 import { SHIFT_TYPE_META, addDaysIso, todayIso, weekRange } from "../components/shifts/shiftUtils.js";
@@ -39,11 +44,12 @@ export default function ShiftsPage() {
   toastRef.current = toast;
 
   const isCoo = user?.role === "COO";
+  const isManager = user?.role === "BRANCH_MANAGER";
   const isCashier = user?.role === "CASHIER";
-  const canManageSchedule = user?.role === "COO" || user?.role === "BRANCH_MANAGER";
-  const canAdjustCash = user?.role === "COO" || user?.role === "BRANCH_MANAGER";
+  const canViewSchedule = isCoo || isManager;
+  const canManageSchedule = isManager;
+  const canAdjustCash = isManager;
   const unassignedManager = isUnassignedBranchManager(user);
-  const menu = buildMenu(user);
 
   const [unlockBranchName, setUnlockBranchName] = useState(undefined);
   const [branches, setBranches] = useState([]);
@@ -95,6 +101,9 @@ export default function ShiftsPage() {
   // Modal states
   const [cashModalMode, setCashModalMode] = useState(null); // "IN" | "OUT" | null
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showInitiateHandover, setShowInitiateHandover] = useState(false);
+  const [showAcceptHandover, setShowAcceptHandover] = useState(false);
+  const [showCancelHandover, setShowCancelHandover] = useState(false);
   const [scheduleModal, setScheduleModal] = useState(null); // { mode, shift }
   const [detailShiftId, setDetailShiftId] = useState(null);
 
@@ -133,8 +142,10 @@ export default function ShiftsPage() {
         navigate("/branch/shifts");
       } else {
         const numericId = Number(nextScope);
+        const normalizedTab =
+          nextTab === "schedule" || nextTab === "history" ? nextTab : "operations";
         setCooScope(numericId);
-        setActiveTab(nextTab);
+        setActiveTab(normalizedTab);
         navigate(`/branch/shifts?branchId=${numericId}`);
       }
     },
@@ -158,10 +169,10 @@ export default function ShiftsPage() {
       if (!targetBranchId) return;
       try {
         const kioskPromise = attendanceApi.kioskEmployees(targetBranchId);
-        const usersPromise = canManageSchedule
+        const usersPromise = canViewSchedule
           ? usersApi.list({ uiPage: 1, size: 100, branchId: targetBranchId })
           : Promise.resolve({ items: [] });
-        const cooPromise = canManageSchedule
+        const cooPromise = canViewSchedule
           ? usersApi.list({ uiPage: 1, size: 20, role: "COO" })
           : Promise.resolve({ items: [] });
 
@@ -179,6 +190,13 @@ export default function ShiftsPage() {
         for (const k of kioskList) {
           if (k.isCheckedIn) checkedSet.add(k.employeeId);
           kioskMap[k.employeeId] = k;
+        }
+
+        if (!canViewSchedule) {
+          setCheckedInIds(checkedSet);
+          setEmployees([]);
+          setCooActors([]);
+          return;
         }
 
         const merged = new Map();
@@ -215,7 +233,7 @@ export default function ShiftsPage() {
         // Bỏ qua nếu không tải được toàn bộ danh bạ
       }
     },
-    [canManageSchedule],
+    [canViewSchedule],
   );
 
   const loadCurrent = useCallback(async (targetBranchId) => {
@@ -254,36 +272,47 @@ export default function ShiftsPage() {
     }
   }, []);
 
-  const loadNearToday = useCallback(async (targetBranchId) => {
-    if (!targetBranchId) return;
-    try {
-      const t = todayIso();
-      const res = await shiftsApi.schedules({
-        branchId: targetBranchId,
-        startDate: addDaysIso(t, -1),
-        endDate: addDaysIso(t, 3),
-      });
-      setNearTodaySchedules(res || []);
-    } catch {
-      setNearTodaySchedules([]);
-    }
-  }, []);
+  const loadNearToday = useCallback(
+    async (targetBranchId) => {
+      if (!targetBranchId) return;
+      try {
+        if (canViewSchedule) {
+          const t = todayIso();
+          const res = await shiftsApi.schedules({
+            branchId: targetBranchId,
+            startDate: addDaysIso(t, -1),
+            endDate: addDaysIso(t, 3),
+          });
+          setNearTodaySchedules(res || []);
+        } else {
+          const res = await shiftsApi.openCandidates(targetBranchId);
+          setNearTodaySchedules(res || []);
+        }
+      } catch {
+        setNearTodaySchedules([]);
+      }
+    },
+    [canViewSchedule],
+  );
 
-  const loadSchedules = useCallback(async (targetBranchId, start, end) => {
-    if (!targetBranchId || !start || !end || start > end) {
-      setSchedules([]);
-      return;
-    }
-    setLoadingSchedules(true);
-    try {
-      const res = await shiftsApi.schedules({ branchId: targetBranchId, startDate: start, endDate: end });
-      setSchedules(res || []);
-    } catch (err) {
-      toastRef.current.error(err.message || "Không tải được lịch phân ca.");
-    } finally {
-      setLoadingSchedules(false);
-    }
-  }, []);
+  const loadSchedules = useCallback(
+    async (targetBranchId, start, end) => {
+      if (!canViewSchedule || !targetBranchId || !start || !end || start > end) {
+        setSchedules([]);
+        return;
+      }
+      setLoadingSchedules(true);
+      try {
+        const res = await shiftsApi.schedules({ branchId: targetBranchId, startDate: start, endDate: end });
+        setSchedules(res || []);
+      } catch (err) {
+        toastRef.current.error(err.message || "Không tải được lịch phân ca.");
+      } finally {
+        setLoadingSchedules(false);
+      }
+    },
+    [canViewSchedule],
+  );
 
   const reloadAll = useCallback(async () => {
     if (status !== "authenticated" || !user || !ALLOWED_ROLES.includes(user.role) || unassignedManager) {
@@ -300,7 +329,7 @@ export default function ShiftsPage() {
       loadCurrent(branchId),
       loadPreviousClosed(branchId),
       loadNearToday(branchId),
-      loadSchedules(branchId, scheduleStart, scheduleEnd),
+      canViewSchedule ? loadSchedules(branchId, scheduleStart, scheduleEnd) : Promise.resolve(),
     ]);
     setHistoryRefreshKey((k) => k + 1);
   }, [
@@ -311,6 +340,7 @@ export default function ShiftsPage() {
     branchId,
     scheduleStart,
     scheduleEnd,
+    canViewSchedule,
     loadBranchesOverview,
     loadDirectory,
     loadCurrent,
@@ -344,6 +374,7 @@ export default function ShiftsPage() {
     unassignedManager,
     isAllBranchesMode,
     branchId,
+    canViewSchedule,
     loadBranchesOverview,
     loadDirectory,
     loadCurrent,
@@ -352,9 +383,28 @@ export default function ShiftsPage() {
   ]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !user || unassignedManager || isAllBranchesMode || !branchId) return;
+    if (
+      status !== "authenticated" ||
+      !user ||
+      !canViewSchedule ||
+      unassignedManager ||
+      isAllBranchesMode ||
+      !branchId
+    ) {
+      return;
+    }
     loadSchedules(branchId, scheduleStart, scheduleEnd);
-  }, [status, user, unassignedManager, isAllBranchesMode, branchId, scheduleStart, scheduleEnd, loadSchedules]);
+  }, [
+    status,
+    user,
+    canViewSchedule,
+    unassignedManager,
+    isAllBranchesMode,
+    branchId,
+    scheduleStart,
+    scheduleEnd,
+    loadSchedules,
+  ]);
 
   const employeeMap = useMemo(() => {
     const map = {};
@@ -365,6 +415,15 @@ export default function ShiftsPage() {
     }
     return map;
   }, [cooActors, employees, user]);
+
+  const modalSchedules = useMemo(() => {
+    const map = new Map();
+    for (const s of schedules || []) map.set(s.shiftId, s);
+    for (const s of nearTodaySchedules || []) {
+      if (!map.has(s.shiftId)) map.set(s.shiftId, s);
+    }
+    return Array.from(map.values());
+  }, [schedules, nearTodaySchedules]);
 
   const scheduledCandidates = useMemo(
     () => (nearTodaySchedules || []).filter((s) => s.status === "SCHEDULED"),
@@ -416,13 +475,19 @@ export default function ShiftsPage() {
       render: (r) =>
         r.hasOpenShift ? (
           <div>
-            <StatusTag
-              status="OPEN"
-              variant="dark"
-              label={`${SHIFT_TYPE_META[r.openShiftType]?.label || r.openShiftType} #${r.openShiftId}`}
-            />
+            <div className="d-flex gap-1 flex-wrap align-items-center">
+              <StatusTag
+                status="OPEN"
+                variant="dark"
+                label={`${SHIFT_TYPE_META[r.openShiftType]?.label || r.openShiftType} #${r.openShiftId}`}
+              />
+              {r.handoverPending ? (
+                <StatusTag status="PENDING_RECEIVE" variant="warn" label="Chờ bàn giao két" />
+              ) : null}
+            </div>
             <div className="small text-muted-scms mt-1">
-              Mở lúc {formatDateTime(r.openedAt)} · {r.openedByName || `NV #${r.openedBy || "—"}`}
+              Mở lúc {formatDateTime(r.openedAt)} · Giữ két:{" "}
+              <strong>{r.activeCashierName || r.openedByName || `NV #${r.activeCashierId || r.openedBy || "—"}`}</strong>
             </div>
           </div>
         ) : (
@@ -491,7 +556,7 @@ export default function ShiftsPage() {
             variant={r.hasOpenShift ? "outline-primary" : "primary"}
             onClick={() => selectCooScope(r.branchId, "operations")}
           >
-            {r.hasOpenShift ? "Kiểm két / Thao tác →" : "Vào chi nhánh →"}
+            Xem chi nhánh →
           </Button>
         </div>
       ),
@@ -502,7 +567,7 @@ export default function ShiftsPage() {
   if (status === "restoring") {
     return (
       <AdminLayout
-        menu={POS_MENU}
+        menu={buildPosMenu({ unlocked: false, shiftOpen: false })}
         headerRight={<SessionHeaderRight />}
         userName="Quầy thu ngân"
         userRole="Đang tải"
@@ -518,7 +583,7 @@ export default function ShiftsPage() {
   if (status === "anonymous" || !user) {
     return (
       <AdminLayout
-        menu={POS_MENU}
+        menu={buildPosMenu({ unlocked: false, shiftOpen: false })}
         branchName={unlockBranchName}
         headerRight={<SessionHeaderRight />}
         userName="Quầy thu ngân"
@@ -527,7 +592,7 @@ export default function ShiftsPage() {
         <PageHeader
           title="Kiểm két & Ca làm việc"
           screenCode="SCR-08 · PIN UNLOCK"
-          description="Thu ngân chọn tên và nhập mã PIN 4 số để kiểm két đầu ca (so với kết ca cũ), mở ca hoặc đóng ca cuối ca."
+          description="Thu ngân chọn tên và nhập mã PIN 4 số để kiểm két đầu ca (so với kết ca cũ), tự động check-in khi mở ca và nhập PIN xác nhận check-out khi đóng ca."
         />
         <CashierPinUnlockPanel
           initialBranchId={query.branchId ? Number(query.branchId) : null}
@@ -537,11 +602,27 @@ export default function ShiftsPage() {
     );
   }
 
+  const isHandoverPending = Boolean(currentSummary?.shift?.handoverPending);
+  const resolvedMenu = isCashier
+    ? buildPosMenu({
+        unlocked: true,
+        shiftOpen: Boolean(currentSummary?.shift),
+        handoverPending: isHandoverPending,
+      })
+    : buildMenu(user);
+
+  const singleBranchAllowedTabs = isCashier
+    ? ["operations", "history"]
+    : ["operations", "schedule", "history"];
+  const effectiveSingleBranchTab = singleBranchAllowedTabs.includes(activeTab)
+    ? activeTab
+    : "operations";
+
   // Đã đăng nhập nhưng sai vai trò
   if (!ALLOWED_ROLES.includes(user.role)) {
     return (
       <AdminLayout
-        menu={menu}
+        menu={resolvedMenu}
         branchName={user.branchName || undefined}
         headerRight={<SessionHeaderRight />}
         userName={user.fullName}
@@ -562,19 +643,27 @@ export default function ShiftsPage() {
 
   return (
     <AdminLayout
-      menu={menu}
+      menu={resolvedMenu}
       branchName={selectedBranchName}
       headerRight={<SessionHeaderRight />}
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}
     >
       <PageHeader
-        title={isAllBranchesMode ? "Tổng quan ca & két toàn chuỗi" : "Kiểm két & Ca làm việc"}
+        title={
+          isAllBranchesMode
+            ? "Tổng quan ca & két toàn chuỗi"
+            : isCoo
+              ? "Theo dõi ca & két chi nhánh"
+              : "Kiểm két & Ca làm việc"
+        }
         screenCode="SCR-08 · UC08 / UC24–27"
         description={
           isCashier
             ? "Thu ngân kiểm két đầu ca so với kết ca cũ, mở ca bán hàng và nhập tiền thực đếm cuối ca."
-            : "Theo dõi két tiền từng chi nhánh, nạp/rút tiền mặt, xếp lịch phân ca và đối soát mở/đóng ca."
+            : isCoo
+              ? "Theo dõi trạng thái ca làm việc, số dư két tiền, lịch phân ca và lịch sử đối soát chi tiết (chế độ xem COO)."
+              : "Theo dõi két tiền chi nhánh, nạp/rút tiền mặt, xếp lịch phân ca và đối soát mở/đóng ca."
         }
         actions={
           unassignedManager ? null : (
@@ -599,12 +688,36 @@ export default function ShiftsPage() {
                   Đổi thu ngân
                 </Button>
               ) : null}
-              <Button variant="outline-secondary" onClick={() => navigate("/kiosk")}>
-                Kiosk chấm công
-              </Button>
-              <Button variant="outline-secondary" onClick={() => navigate("/pos")}>
-                Quầy POS
-              </Button>
+              {!isCoo ? (
+                <>
+                  <Button variant="outline-secondary" onClick={() => navigate("/kiosk")}>
+                    Kiosk chấm công
+                  </Button>
+                  {currentSummary?.shift ? (
+                    isHandoverPending ? (
+                      <Button
+                        variant="outline-secondary"
+                        disabled
+                        title="Két tiền đang tạm khóa chờ người nhận kiểm két bàn giao giữa ca"
+                      >
+                        Quầy POS (Chờ bàn giao)
+                      </Button>
+                    ) : (
+                      <Button variant="primary" onClick={() => navigate("/pos")}>
+                        Mở quầy POS →
+                      </Button>
+                    )
+                  ) : (
+                    <Button
+                      variant="outline-secondary"
+                      disabled
+                      title="Kiểm két và mở ca trước khi vào Gọi món (POS)"
+                    >
+                      Quầy POS (Chưa mở ca)
+                    </Button>
+                  )}
+                </>
+              ) : null}
               <Button
                 variant="outline-secondary"
                 onClick={reloadAll}
@@ -685,13 +798,23 @@ export default function ShiftsPage() {
         </div>
       ) : (
         <>
-          <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k || "operations")} className="mb-3">
+          <Tabs
+            activeKey={effectiveSingleBranchTab}
+            onSelect={(k) => setActiveTab(k || "operations")}
+            className="mb-3"
+          >
             <Tab
               eventKey="operations"
               title={
-                currentSummary?.shift
-                  ? `Kiểm két & Đóng/Mở ca (Ca #${currentSummary.shift.id} đang mở)`
-                  : "Kiểm két & Mở ca"
+                isCoo
+                  ? currentSummary?.shift
+                    ? `Ca hiện tại (#${currentSummary.shift.id}${isHandoverPending ? " · chờ bàn giao" : " đang mở"})`
+                    : "Trạng thái ca hiện tại"
+                  : currentSummary?.shift
+                    ? isHandoverPending
+                      ? `Bàn giao két ca #${currentSummary.shift.id} (Chờ nhận)`
+                      : `Kiểm két & Đóng/Mở ca (Ca #${currentSummary.shift.id} đang mở)`
+                    : "Kiểm két & Mở ca"
               }
             >
               <ShiftOperationsTab
@@ -709,43 +832,59 @@ export default function ShiftsPage() {
                 employeeMap={employeeMap}
                 checkedInIds={checkedInIds}
                 canManage={canManageSchedule}
+                readOnly={isCoo}
+                hideStaffSchedule={isCashier}
                 onClearPreselectedScheduled={() => setPreselectedScheduledId(null)}
                 onReloadAll={reloadAll}
                 onOpenCashModal={(mode) => setCashModalMode(mode)}
                 onOpenCloseModal={() => setShowCloseModal(true)}
+                onOpenInitiateHandover={() => setShowInitiateHandover(true)}
+                onOpenAcceptHandover={() => setShowAcceptHandover(true)}
+                onOpenCancelHandover={() => setShowCancelHandover(true)}
+                onChangeCashier={() => logout()}
                 onOpenScheduleModal={(mode, shift) => setScheduleModal({ mode, shift })}
+                onViewDetail={(id) => setDetailShiftId(id)}
+                onSwitchTab={(nextTab) => setActiveTab(nextTab)}
               />
             </Tab>
 
-            <Tab eventKey="schedule" title={`Lịch phân ca (${schedules.length})`}>
-              <ShiftScheduleTab
-                schedules={schedules}
-                loading={loadingSchedules}
-                startDate={scheduleStart}
-                endDate={scheduleEnd}
-                onChangeDateRange={(s, e) => {
-                  setScheduleStart(s);
-                  setScheduleEnd(e);
-                }}
-                employees={employees}
-                employeeMap={employeeMap}
-                checkedInIds={checkedInIds}
-                currentUserId={user.id}
-                hasOpenShift={Boolean(currentSummary?.shift)}
-                canManage={canManageSchedule}
-                onRefresh={reloadAll}
-                onOpenCreate={(prefill) => setScheduleModal({ mode: "create", shift: prefill || null })}
-                onOpenEdit={(s) => setScheduleModal({ mode: "edit", shift: s })}
-                onQuickOpenScheduledShift={(s) => {
-                  setPreselectedScheduledId(s.shiftId);
-                  setActiveTab("operations");
-                }}
-              />
-            </Tab>
+            {canViewSchedule ? (
+              <Tab eventKey="schedule" title={`Lịch phân ca (${schedules.length})`}>
+                <ShiftScheduleTab
+                  schedules={schedules}
+                  loading={loadingSchedules}
+                  startDate={scheduleStart}
+                  endDate={scheduleEnd}
+                  onChangeDateRange={(s, e) => {
+                    setScheduleStart(s);
+                    setScheduleEnd(e);
+                  }}
+                  employees={employees}
+                  employeeMap={employeeMap}
+                  checkedInIds={checkedInIds}
+                  currentUserId={user.id}
+                  hasOpenShift={Boolean(currentSummary?.shift)}
+                  canManage={canManageSchedule}
+                  readOnly={isCoo}
+                  onRefresh={reloadAll}
+                  onOpenCreate={(prefill) => setScheduleModal({ mode: "create", shift: prefill || null })}
+                  onOpenEdit={(s) => setScheduleModal({ mode: "edit", shift: s })}
+                  onQuickOpenScheduledShift={(s) => {
+                    setPreselectedScheduledId(s.shiftId);
+                    setActiveTab("operations");
+                  }}
+                  onViewDetail={(id) => setDetailShiftId(id)}
+                />
+              </Tab>
+            ) : null}
 
-            <Tab eventKey="history" title="Lịch sử ca & Đối soát">
+            <Tab
+              eventKey="history"
+              title={isCashier ? "Ca trước & Đối soát" : "Lịch sử ca & Đối soát"}
+            >
               <ShiftHistoryTab
                 branchId={branchId}
+                cashierPreviousOnly={isCashier}
                 refreshTrigger={historyRefreshKey}
                 onViewDetail={(id) => setDetailShiftId(id)}
               />
@@ -764,12 +903,47 @@ export default function ShiftsPage() {
             />
           ) : null}
 
-          <CloseShiftModal
-            show={showCloseModal}
-            summary={currentSummary}
-            onClose={() => setShowCloseModal(false)}
-            onSuccess={reloadAll}
-          />
+          {!isCoo ? (
+            <>
+              <CloseShiftModal
+                show={showCloseModal}
+                summary={currentSummary}
+                userRole={user.role}
+                isCheckedIn={Boolean(user?.id && checkedInIds.has(user.id))}
+                onClose={() => setShowCloseModal(false)}
+                onSuccess={reloadAll}
+              />
+              <InitiateHandoverModal
+                show={showInitiateHandover}
+                summary={currentSummary}
+                userRole={user.role}
+                branchId={branchId}
+                currentUserId={user.id}
+                employees={employees}
+                employeeMap={employeeMap}
+                onClose={() => setShowInitiateHandover(false)}
+                onSuccess={reloadAll}
+              />
+              <AcceptHandoverModal
+                show={showAcceptHandover}
+                summary={currentSummary}
+                userRole={user.role}
+                currentUserId={user.id}
+                currentUserName={user.fullName}
+                employees={employees}
+                employeeMap={employeeMap}
+                onClose={() => setShowAcceptHandover(false)}
+                onSuccess={reloadAll}
+              />
+              <CancelHandoverModal
+                show={showCancelHandover}
+                shift={currentSummary?.shift}
+                userRole={user.role}
+                onClose={() => setShowCancelHandover(false)}
+                onSuccess={reloadAll}
+              />
+            </>
+          ) : null}
 
           {canManageSchedule ? (
             <ShiftScheduleModal
@@ -778,6 +952,7 @@ export default function ShiftsPage() {
               initialShift={scheduleModal?.shift}
               branchId={branchId}
               employees={employees}
+              schedules={modalSchedules}
               checkedInIds={checkedInIds}
               onClose={() => setScheduleModal(null)}
               onSuccess={reloadAll}
@@ -788,6 +963,7 @@ export default function ShiftsPage() {
             show={Boolean(detailShiftId)}
             shiftId={detailShiftId}
             employeeMap={employeeMap}
+            hideAssignedStaff={isCashier}
             onClose={() => setDetailShiftId(null)}
           />
         </>

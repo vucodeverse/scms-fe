@@ -1,16 +1,16 @@
 // Điều hướng sau đăng nhập (SCR-03): backend trả `landing` dạng mã màn hình
 // trong response login — COO: SCR-10, Branch Manager: SCR-07, Cashier: SCR-04.
-// Khi khôi phục phiên (không có landing), suy ra từ role.
+// Riêng Thu ngân (CASHIER / quầy POS) vào màn Ca & két tiền trước để kiểm két & mở ca rồi mới vào Gọi món POS.
 export const LANDING_BY_SCREEN = {
   "SCR-10": "/chain/overview",
   "SCR-07": "/branch/overview",
-  "SCR-04": "/pos",
+  "SCR-04": "/branch/shifts",
 };
 
 export const LANDING_BY_ROLE = {
   COO: "/chain/overview",
   BRANCH_MANAGER: "/branch/overview",
-  CASHIER: "/pos",
+  CASHIER: "/branch/shifts",
 };
 
 // Nhãn vai trò hiển thị (khớp cách gọi của prototype/tài liệu).
@@ -31,7 +31,7 @@ export function isUnassignedBranchManager(user) {
 }
 
 export function landingPath({ landing, user } = {}) {
-  if (landing && LANDING_BY_SCREEN[landing]) return LANDING_BY_SCREEN[landing];
   if (user?.role && LANDING_BY_ROLE[user.role]) return LANDING_BY_ROLE[user.role];
-  return "/chain/overview";
+  if (landing && LANDING_BY_SCREEN[landing]) return LANDING_BY_SCREEN[landing];
+  return "/branch/shifts";
 }

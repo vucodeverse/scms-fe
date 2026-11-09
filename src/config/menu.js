@@ -42,7 +42,7 @@ export const APP_MENU = [
   },
 ];
 
-// Menu dành riêng cho quầy POS (chỉ gồm các chức năng bán hàng, tra cứu đơn tại quầy, ca két, chấm công)
+// Menu dành riêng cho quầy POS (chỉ gồm các chức năng bán hàng, tra cứu đơn tại quầy, ca két)
 export const POS_MENU = [
   {
     group: "Quầy bán hàng",
@@ -50,10 +50,44 @@ export const POS_MENU = [
       { key: "pos", label: "Gọi món (POS)", path: "/pos", icon: "pos" },
       { key: "orders", label: "Đơn hàng tại quầy", path: "/branch/orders", icon: "orders" },
       { key: "shifts", label: "Ca & két tiền", path: "/branch/shifts", icon: "cash" },
-      { key: "kiosk", label: "Chấm công (Kiosk)", path: "/kiosk", icon: "clock" },
     ],
   },
 ];
+
+// Xây dựng menu quầy POS theo trạng thái mở khóa PIN, trạng thái ca & khóa bàn giao két giữa ca.
+// Thu ngân phải mở khóa PIN, kiểm két & mở ca (và không bị khóa bàn giao) trước khi mở mục Gọi món (POS).
+export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPending = false } = {}) {
+  const canOpenPos = Boolean(unlocked && shiftOpen && !handoverPending);
+  return [
+    {
+      group: "Quầy bán hàng",
+      items: [
+        {
+          key: "pos",
+          label: "Gọi món (POS)",
+          path: "/pos",
+          icon: "pos",
+          disabled: !canOpenPos,
+          badge: !canOpenPos ? (!unlocked ? "PIN" : !shiftOpen ? "Mở ca" : "Bàn giao") : undefined,
+          disabledReason: !unlocked
+            ? "Vui lòng nhập PIN mở khóa Thu ngân tại Ca & két tiền"
+            : !shiftOpen
+              ? "Vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)"
+              : "Két tiền đang tạm khóa chờ người mới kiểm két nhận bàn giao giữa ca tại Ca & két tiền",
+        },
+        {
+          key: "orders",
+          label: "Đơn hàng tại quầy",
+          path: "/branch/orders",
+          icon: "orders",
+          disabled: !unlocked,
+          disabledReason: !unlocked ? "Vui lòng nhập PIN mở khóa Thu ngân trước" : undefined,
+        },
+        { key: "shifts", label: "Ca & két tiền", path: "/branch/shifts", icon: "cash" },
+      ],
+    },
+  ];
+}
 
 // Lọc menu theo permissions và roles của người dùng hiện tại; nhóm rỗng bị loại.
 // Khi chưa đăng nhập hoặc là Thu ngân (CASHIER): chỉ hiển thị các chức năng quầy POS.

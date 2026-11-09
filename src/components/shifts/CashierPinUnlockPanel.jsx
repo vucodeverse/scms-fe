@@ -396,15 +396,16 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
 
           <ul className="mb-3 ps-3 small" style={{ lineHeight: 1.7 }}>
             <li>
-              <strong>Kiểm két đầu ca:</strong> Thu ngân đếm tiền mặt thực tế trong két và đối chiếu trực tiếp với{" "}
-              <strong>kết ca trước</strong>. Nếu có chênh lệch, hệ thống cảnh báo và yêu cầu ghi rõ lý do trước khi mở ca.
+              <strong>Bước 1 · Kiểm két &amp; Mở ca (tự động Check-in):</strong> Sau khi mở khóa bằng PIN, Thu ngân đếm tiền mặt trong két đối chiếu với{" "}
+              <strong>kết ca trước</strong> rồi xác nhận mở ca. Hệ thống sẽ tự động <strong>Check-in</strong> cho Thu ngân và mở khóa màn hình <strong>Gọi món (POS)</strong>.
             </li>
             <li>
-              <strong>Bán hàng POS &amp; tiền thối:</strong> Thu tiền mặt và trả tiền thừa cho khách trên đơn thuộc luồng thanh toán riêng —{" "}
+              <strong>Bước 2 · Bán hàng POS &amp; tiền thối:</strong> Thu tiền mặt và trả tiền thừa cho khách trên đơn thuộc luồng thanh toán riêng —{" "}
               <strong>không phải rút tiền két thủ công</strong>.
             </li>
             <li>
-              <strong>Kết thúc ca (Đóng ca):</strong> Thu ngân tự nhập số tiền thực đếm cuối ca để hệ thống chốt chênh lệch &amp; bàn giao cho ca sau.
+              <strong>Bước 3 · Đóng ca &amp; Nhập PIN Check-out:</strong> Cuối ca, Thu ngân kiểm đếm lại tiền két và{" "}
+              <strong>nhập lại mã PIN cá nhân</strong> để xác nhận đóng ca &amp; tự động <strong>Check-out</strong>.
             </li>
             <li>
               <strong>Nạp / Rút tiền mặt thủ công:</strong> Thu ngân <strong>không</strong> có quyền nạp hoặc rút tiền mặt khỏi két; chỉ{" "}
@@ -416,8 +417,8 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
             <Button variant="primary" onClick={() => navigate("/login")}>
               Đăng nhập Quản lý / COO
             </Button>
-            <Button variant="outline-secondary" onClick={() => navigate("/pos")}>
-              <Icon name="back" size={14} /> Về quầy POS
+            <Button variant="outline-secondary" onClick={() => navigate("/kiosk")}>
+              Mở Kiosk chấm công
             </Button>
           </div>
         </div>

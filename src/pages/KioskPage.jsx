@@ -4,12 +4,17 @@ import Icon from "../components/Icon.jsx";
 import StatusTag from "../components/StatusTag.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { attendanceApi } from "../api/attendanceApi.js";
+import { branchesApi } from "../api/branchesApi.js";
 import { formatTime } from "../lib/format.js";
 import { POSITION_LABELS } from "./EmployeesPage.jsx";
 
 const BRANCH_KEY = "scms.kioskBranchId";
 const PIN_LENGTH = 4;
 const NUMPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "OK"];
+const BRANCH_STATUS_LABELS = {
+  TEMP_CLOSED: "Tạm đóng",
+  MAINTENANCE: "Bảo trì",
+};
 
 function sortKioskEmployees(items) {
   return [...items].sort((a, b) => {
@@ -34,7 +39,7 @@ function formatLockRemaining(untilIso, nowMs) {
 // phải chọn nhân viên, hiển thị PIN 4 chấm, numpad cảm ứng và
 // banner kết quả. Chỉ nhân viên đã được phân công ca phù hợp mới
 // check-in / check-out được (BR phân ca). Kiosk không đăng nhập;
-// chi nhánh được thiết lập một lần (query ?branchId= hoặc nhập tại máy).
+// chi nhánh được thiết lập một lần (query ?branchId= hoặc chọn từ danh sách tại máy).
 export default function KioskPage() {
   const { query, navigate } = useRouter();
 
@@ -47,6 +52,9 @@ export default function KioskPage() {
     const saved = localStorage.getItem(BRANCH_KEY);
     return saved ? Number(saved) : null;
   });
+  const [branches, setBranches] = useState([]);
+  const [loadingBranches, setLoadingBranches] = useState(true);
+  const [branchError, setBranchError] = useState(null);
   const [branchInput, setBranchInput] = useState("");
   const [employees, setEmployees] = useState([]);
   const [onlyAssigned, setOnlyAssigned] = useState(false);
@@ -64,6 +72,53 @@ export default function KioskPage() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  const selectableBranches = useMemo(
+    () => branches.filter((b) => b.status !== "INACTIVE"),
+    [branches],
+  );
+
+  const selectedBranch = useMemo(
+    () => branches.find((b) => String(b.id) === String(branchId)) || null,
+    [branches, branchId],
+  );
+
+  const branchLabel = selectedBranch
+    ? `${selectedBranch.code} — ${selectedBranch.name}`
+    : branchId
+      ? `Chi nhánh #${branchId}`
+      : null;
+
+  const loadBranches = useCallback(async () => {
+    setLoadingBranches(true);
+    setBranchError(null);
+    try {
+      const res = await branchesApi.publicList({
+        uiPage: 1,
+        size: 100,
+        sortBy: "code",
+        sortDir: "ASC",
+      });
+      const items = Array.isArray(res?.items) ? res.items : [];
+      setBranches(items);
+      const active = items.filter((b) => b.status !== "INACTIVE");
+      const preferred = active.find((b) => b.status === "OPEN") || active[0] || null;
+      setBranchInput((prev) => {
+        if (prev && active.some((b) => String(b.id) === String(prev))) {
+          return prev;
+        }
+        return preferred ? String(preferred.id) : "";
+      });
+    } catch (err) {
+      setBranchError(err.message || "Không tải được danh sách chi nhánh.");
+    } finally {
+      setLoadingBranches(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBranches();
+  }, [loadBranches]);
 
   const loadEmployees = useCallback(async (branch) => {
     if (!branch) return;
@@ -147,7 +202,8 @@ export default function KioskPage() {
     }
   }, []);
 
-  function applyBranch() {
+  function applyBranch(e) {
+    if (e?.preventDefault) e.preventDefault();
     const id = Number(branchInput);
     if (!id) return;
     localStorage.setItem(BRANCH_KEY, String(id));
@@ -156,12 +212,21 @@ export default function KioskPage() {
   }
 
   function resetBranch() {
+    const prevId = branchId ? String(branchId) : "";
     localStorage.removeItem(BRANCH_KEY);
     setBranchId(null);
     setEmployees([]);
+    setEmployeeError(null);
     setSelectedId("");
     setPin("");
+    setCardCode("");
     setResult(null);
+    if (prevId && selectableBranches.some((b) => String(b.id) === prevId)) {
+      setBranchInput(prevId);
+    } else if (selectableBranches.length > 0) {
+      const preferred = selectableBranches.find((b) => b.status === "OPEN") || selectableBranches[0];
+      setBranchInput(String(preferred.id));
+    }
   }
 
   async function submitPin() {
@@ -328,7 +393,7 @@ export default function KioskPage() {
           </div>
           <div className="date">{dateLine}</div>
           <div className="server-note">
-            Đồng hồ hệ thống{branchId ? ` · Kiosk chi nhánh #${branchId}` : " · Chưa thiết lập chi nhánh"}
+            Đồng hồ hệ thống{branchLabel ? ` · Kiosk ${branchLabel}` : " · Chưa thiết lập chi nhánh"}
           </div>
         </div>
 
@@ -367,26 +432,58 @@ export default function KioskPage() {
           <p>Chọn nhân viên đã phân ca, nhập PIN 4 số và xác nhận check-in/check-out.</p>
 
           {!branchId ? (
-            <div>
+            <Form onSubmit={applyBranch}>
               <Form.Group className="mb-3">
-                <Form.Label>Thiết lập kiosk — ID chi nhánh</Form.Label>
-                <Form.Control
+                <Form.Label htmlFor="kiosk-branch-select">Thiết lập kiosk — Chọn chi nhánh</Form.Label>
+                <Form.Select
+                  id="kiosk-branch-select"
                   size="lg"
-                  type="number"
-                  min="1"
                   value={branchInput}
                   onChange={(e) => setBranchInput(e.target.value)}
-                  placeholder="Ví dụ: 1"
-                />
+                  disabled={loadingBranches || selectableBranches.length === 0}
+                >
+                  {loadingBranches ? (
+                    <option value="">Đang tải danh sách chi nhánh…</option>
+                  ) : selectableBranches.length === 0 ? (
+                    <option value="">Chưa có chi nhánh khả dụng</option>
+                  ) : (
+                    selectableBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} — {b.name}
+                        {BRANCH_STATUS_LABELS[b.status] ? ` (${BRANCH_STATUS_LABELS[b.status]})` : ""}
+                      </option>
+                    ))
+                  )}
+                </Form.Select>
                 <Form.Text className="text-muted">
-                  ID chi nhánh được quản trị viên cung cấp khi lắp máy kiosk; thiết lập được lưu trên máy
-                  này.
+                  {branchError
+                    ? branchError
+                    : "Chọn tên chi nhánh đã có nơi lắp đặt máy kiosk; thiết lập được lưu trên máy này."}
                 </Form.Text>
+                {branchError ? (
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant="outline-secondary"
+                      type="button"
+                      onClick={loadBranches}
+                      disabled={loadingBranches}
+                    >
+                      Thử tải lại danh sách chi nhánh
+                    </Button>
+                  </div>
+                ) : null}
               </Form.Group>
-              <Button variant="primary" size="lg" className="w-100" onClick={applyBranch} disabled={!branchInput}>
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="w-100"
+                disabled={loadingBranches || !branchInput}
+              >
                 Bắt đầu chấm công
               </Button>
-            </div>
+            </Form>
           ) : (
             <>
               <Form.Group className="mb-2">
@@ -434,7 +531,7 @@ export default function KioskPage() {
                   {employeeError
                     ? employeeError
                     : selected
-                      ? `${selected.fullName} · Chi nhánh #${branchId}${selected.shiftLabel ? ` · ${selected.shiftLabel}` : ""}`
+                      ? `${selected.fullName} · ${branchLabel}${selected.shiftLabel ? ` · ${selected.shiftLabel}` : ""}`
                       : loadingEmployees
                         ? "Đang tải danh sách…"
                         : onlyAssigned
