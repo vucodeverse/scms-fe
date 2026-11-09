@@ -5,8 +5,7 @@ import TaskLayout from "../layouts/TaskLayout.jsx";
 import FormField from "../components/FormField.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { isUnassignedBranchManager, roleLabel } from "../auth/landing.js";
-import UnassignedManagerNotice from "../components/UnassignedManagerNotice.jsx";
+import { roleLabel } from "../auth/landing.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { inventoryApi } from "../api/inventoryApi.js";
 import { fmtQty } from "./InventoryPage.jsx";
@@ -54,10 +53,9 @@ export default function StockSlipPage() {
   toastRef.current = toast;
   const type = META[query?.type] ? query.type : "receive";
   const meta = META[type];
-  const unassignedManager = isUnassignedBranchManager(user);
 
   const [stock, setStock] = useState([]);
-  const [loading, setLoading] = useState(!unassignedManager);
+  const [loading, setLoading] = useState(true);
   const [header, setHeader] = useState({
     source: "SUPPLIER",
     supplierName: "",
@@ -77,10 +75,6 @@ export default function StockSlipPage() {
   const [result, setResult] = useState(null);
 
   const load = useCallback(async () => {
-    if (unassignedManager) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
       const page = await inventoryApi.getStock({ branchId: user?.branchId || undefined, uiPage: 1, size: 100 });
@@ -90,7 +84,7 @@ export default function StockSlipPage() {
     } finally {
       setLoading(false);
     }
-  }, [unassignedManager, user?.branchId]);
+  }, [user?.branchId]);
 
   useEffect(() => {
     load();
@@ -194,9 +188,7 @@ export default function StockSlipPage() {
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}
     >
-      {unassignedManager ? (
-        <UnassignedManagerNotice />
-      ) : result ? (
+      {result ? (
         <div className="scms-panel panel-pad" style={{ maxWidth: 720 }}>
           <div className="panel-head">
             <div>

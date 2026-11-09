@@ -33,6 +33,7 @@ export const APP_MENU = [
       { key: "managers", label: "Tài khoản quản lý", path: "/chain/managers", icon: "user", permission: PERMISSIONS.MANAGER_MANAGE },
       { key: "employees", label: "Nhân viên", path: "/branch/employees", icon: "users", permission: PERMISSIONS.EMPLOYEE_MANAGE, roles: ["COO", "BRANCH_MANAGER"] },
       { key: "menu", label: "Menu & BOM", path: "/chain/menu", icon: "menu", permission: PERMISSIONS.MENU_MANAGE },
+      { key: "ingredients", label: "Nguyên vật liệu", path: "/chain/menu?tab=ingredients", icon: "box", permission: PERMISSIONS.MENU_MANAGE },
       { key: "chain-sync", label: "Đồng bộ chuỗi", path: "/chain/menu/sync", icon: "sync", permission: PERMISSIONS.SYNC_PUBLISH },
       { key: "vouchers", label: "Khuyến mãi & voucher", path: "/chain/vouchers", icon: "tag", permission: PERMISSIONS.VOUCHER_MANAGE },
       { key: "roles", label: "Vai trò & phân quyền", path: "/settings/roles", icon: "settings", permission: PERMISSIONS.ROLE_ASSIGN },
