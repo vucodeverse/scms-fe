@@ -20,8 +20,6 @@ const EMPTY_FORM = () => ({
   email: "",
   position: "CASHIER",
   branchId: "",
-  username: "",
-  password: "",
   pin: "",
   cardCode: "",
   status: "ACTIVE",
@@ -46,12 +44,8 @@ export default function EmployeeEditPage() {
   const [branches, setBranches] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [originalPosition, setOriginalPosition] = useState(null);
-  const [hasUsername, setHasUsername] = useState(false);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
-
-  const [newPassword, setNewPassword] = useState("");
-  const [resetting, setResetting] = useState(false);
 
   const load = useCallback(async () => {
     if (unassignedManager) {
@@ -67,15 +61,12 @@ export default function EmployeeEditPage() {
       if (editingId) {
         const detail = await usersApi.detail(editingId);
         setOriginalPosition(detail.roleCode || detail.position || "CASHIER");
-        setHasUsername(!!detail.username);
         setForm({
           fullName: detail.fullName || "",
           phone: detail.phone || "",
           email: detail.email || "",
           position: detail.roleCode || "CASHIER",
           branchId: detail.branchId ? String(detail.branchId) : "",
-          username: detail.username || "",
-          password: "",
           pin: "",
           cardCode: detail.cardCode || "",
           status: detail.status || "ACTIVE",
@@ -98,9 +89,6 @@ export default function EmployeeEditPage() {
     load();
   }, [load]);
 
-  const isLoginPosition = editingId
-    ? hasUsername || LOGIN_POSITIONS.includes(form.position)
-    : LOGIN_POSITIONS.includes(form.position);
   const BM_CREATABLE_ROLES = ["CASHIER", "BARISTA", "WAITER"];
   const roleOptions = Object.entries(POSITION_LABELS).filter(([value]) => {
     if (isCoo) return value !== "COO";
@@ -108,6 +96,7 @@ export default function EmployeeEditPage() {
     return BM_CREATABLE_ROLES.includes(value);
   });
 
+  const isManagerPosition = ["COO", "BRANCH_MANAGER"].includes(form.position);
   const lockBranchEdit = Boolean(isCoo && editingId && originalPosition === "BRANCH_MANAGER");
   const canHavePin = Boolean(form.branchId || (!isCoo && user?.branchId));
 
@@ -115,16 +104,28 @@ export default function EmployeeEditPage() {
     e.preventDefault();
     if (saving) return;
     setFormError(null);
-    const resolvedBranchId = form.branchId ? Number(form.branchId) : isCoo ? null : user?.branchId || null;
+
+    const pinInput = form.pin.trim();
+    if (pinInput && pinInput.length !== 4) {
+      setFormError({ fieldErrors: [{ field: "pin", message: "Mã PIN phải gồm đúng 4 chữ số." }] });
+      return;
+    }
+
+    const resolvedBranchId = form.branchId
+      ? Number(form.branchId)
+      : !isCoo && user?.branchId
+        ? Number(user.branchId)
+        : null;
+
     const payload = {
       fullName: form.fullName.trim(),
       phone: form.phone.trim(),
       email: form.email.trim() || null,
       position: editingId ? originalPosition : form.position,
       branchId: resolvedBranchId,
-      username: isLoginPosition ? form.username.trim() || null : null,
-      password: !editingId && isLoginPosition ? form.password || null : null,
-      pin: resolvedBranchId && form.pin.trim() ? form.pin.trim() : null,
+      username: null,
+      password: null,
+      pin: pinInput || null,
       cardCode: form.cardCode.trim() || null,
       hourlyRate: null,
       status: form.status,
@@ -152,20 +153,6 @@ export default function EmployeeEditPage() {
       if (!err.fieldErrors?.length) toast.error(err.message || "Không lưu được hồ sơ.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function runResetPassword() {
-    if (!editingId || resetting || !newPassword) return;
-    setResetting(true);
-    try {
-      await usersApi.resetPassword(editingId, newPassword);
-      toast.success("Đã đặt lại mật khẩu. Toàn bộ phiên đăng nhập của nhân viên đã bị thu hồi.");
-      setNewPassword("");
-    } catch (err) {
-      toast.error(err.message || "Không đặt lại được mật khẩu.");
-    } finally {
-      setResetting(false);
     }
   }
 
@@ -264,7 +251,7 @@ export default function EmployeeEditPage() {
                 {isCoo ? (
                   <FormField
                     label="Chi nhánh"
-                    required={!isLoginPosition}
+                    required={!isManagerPosition}
                     error={fe("branchId")}
                     help={
                       lockBranchEdit
@@ -288,39 +275,16 @@ export default function EmployeeEditPage() {
                     </Form.Select>
                   </FormField>
                 ) : null}
-                {isLoginPosition ? (
-                  <>
-                    <FormField label="Tên đăng nhập" required={!editingId} error={fe("username")}>
-                      <Form.Control
-                        value={form.username}
-                        disabled={!!editingId && hasUsername}
-                        onChange={(e) => setForm({ ...form, username: e.target.value })}
-                      />
-                    </FormField>
-                    {!editingId ? (
-                      <FormField label="Mật khẩu" required error={fe("password")}>
-                        <Form.Control
-                          type="password"
-                          value={form.password}
-                          onChange={(e) => setForm({ ...form, password: e.target.value })}
-                          autoComplete="new-password"
-                        />
-                      </FormField>
-                    ) : null}
-                  </>
-                ) : null}
                 <FormField
                   label="PIN 4 số"
-                  required={!editingId && !isLoginPosition}
+                  required={!editingId && !isManagerPosition}
                   error={fe("pin")}
                   help={
                     !canHavePin
                       ? "Chỉ nhân sự thuộc chi nhánh mới dùng PIN."
                       : editingId
-                        ? "Để trống nếu giữ nguyên PIN hiện tại. PIN là duy nhất trong chi nhánh."
-                        : isLoginPosition
-                          ? "Không bắt buộc với Quản lý; nếu nhập, PIN là duy nhất trong chi nhánh."
-                          : "Duy nhất trong chi nhánh."
+                        ? "Để trống nếu giữ nguyên PIN hiện tại. Nhập 4 chữ số để đổi PIN mới (duy nhất trong chi nhánh)."
+                        : "Gồm đúng 4 chữ số, duy nhất trong chi nhánh."
                   }
                 >
                   <Form.Control
@@ -354,33 +318,6 @@ export default function EmployeeEditPage() {
               </div>
             </div>
           </Form>
-
-          {editingId && hasUsername ? (
-            <div className="scms-panel panel-pad mt-3">
-              <div className="panel-head">
-                <div>
-                  <h2>Đặt lại mật khẩu</h2>
-                  <p>Đặt mật khẩu mới sẽ thu hồi toàn bộ phiên đăng nhập hiện tại của nhân viên.</p>
-                </div>
-              </div>
-              <div className="d-flex gap-2 align-items-end flex-wrap">
-                <div style={{ flex: 1, minWidth: 240 }}>
-                  <Form.Label>Mật khẩu mới</Form.Label>
-                  <Form.Control
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Ít nhất 8 ký tự, gồm chữ và số"
-                    autoComplete="new-password"
-                  />
-                </div>
-                <Button variant="primary" onClick={runResetPassword} disabled={resetting || !newPassword}>
-                  {resetting ? <Spinner size="sm" className="me-2" /> : null}
-                  Đặt lại mật khẩu
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </>
       )}
     </TaskLayout>

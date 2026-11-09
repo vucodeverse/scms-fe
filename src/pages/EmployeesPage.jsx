@@ -107,7 +107,7 @@ export default function EmployeesPage() {
       render: (r) => (
         <>
           <div style={{ fontWeight: 600 }}>{r.fullName}</div>
-          <div style={{ color: "var(--muted)", fontSize: 11.5 }}>{r.username || r.email || "—"}</div>
+          <div style={{ color: "var(--muted)", fontSize: 11.5 }}>{r.email || r.phone || "—"}</div>
         </>
       ),
     },

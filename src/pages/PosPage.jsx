@@ -251,31 +251,36 @@ export default function PosPage() {
     if (!bId) return;
     setLoadingAttEmployees(true);
 
-
-
-
     if (!preserveMessage) {
       setAttMessage(null);
-  
     }
 
-
-
     try {
-      const raw = await attendanceApi.kioskEmployees(bId);
-      const list = [...(Array.isArray(raw) ? raw : [])].sort((a, b) => {
-        const aOk = Boolean(a.hasAssignedShift);
-        const bOk = Boolean(b.hasAssignedShift);
-        if (aOk !== bOk) return aOk ? -1 : 1;
-        return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+      const shiftId = shiftBanner?.shift?.id;
+      const raw = await attendanceApi.kioskEmployees(bId, {
+        shiftId: shiftId || undefined,
+        onlyAssigned: true,
+        excludeCashier: true,
       });
+      const activeCashierId = shiftBanner?.shift?.activeCashierId;
+      const list = [...(Array.isArray(raw) ? raw : [])]
+        .filter((e) => {
+          if (!e.hasAssignedShift) return false;
+          const roleUpper = (e.role || "").toUpperCase();
+          if (roleUpper === "CASHIER" || roleUpper === "THU NGÂN") return false;
+          if (activeCashierId && Number(e.employeeId) === Number(activeCashierId)) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+        });
+
       setAttEmployees(list);
       if (list.length > 0) {
-        const preferred = list.find((e) => e.hasAssignedShift) || list[0];
         setSelectedEmpId((cur) =>
           list.some((e) => String(e.employeeId) === String(cur))
             ? cur
-            : String(preferred.employeeId),
+            : String(list[0].employeeId),
         );
       } else {
         setSelectedEmpId("");
@@ -285,7 +290,7 @@ export default function PosPage() {
     } finally {
       setLoadingAttEmployees(false);
     }
-  }, []);
+  }, [shiftBanner?.shift?.id, shiftBanner?.shift?.activeCashierId]);
 
   useEffect(() => {
     if (showAttendanceModal) {
@@ -974,11 +979,19 @@ export default function PosPage() {
 
             {loadingAttEmployees ? (
               <div className="text-center py-4">
-                <Spinner size="sm" className="me-2" /> Đang tải nhân sự chi nhánh…
+                <Spinner size="sm" className="me-2" /> Đang tải nhân sự ca làm việc…
+              </div>
+            ) : attEmployees.length === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-muted mb-2" style={{ fontSize: 32 }}>👥</div>
+                <div className="fw-semibold mb-1">Không có nhân viên cần chấm công trong ca này</div>
+                <div className="text-muted-scms small px-3">
+                  Thu ngân đã được ghi nhận chấm công tự động khi mở ca. Ca làm việc hiện tại không có nhân viên khác (pha chế, phục vụ...) được xếp ca.
+                </div>
               </div>
             ) : (
               <>
-                <FormField label="Chọn nhân viên" required className="mb-3">
+                <FormField label="Chọn nhân viên trong ca" required className="mb-3">
                   <Form.Select
                     value={selectedEmpId}
                     onChange={(e) => {
@@ -1093,7 +1106,7 @@ export default function PosPage() {
               >
                 Đóng
               </Button>
-              {(() => {
+              {attEmployees.length > 0 && (() => {
                 const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
                 const isOut = emp?.isCheckedIn;
                 return (

@@ -5,8 +5,8 @@ import { publicHttp } from "./client.js";
 // kiosk gọi qua publicHttp không gắn access token. Chỉ nên chạy
 // kiosk trong LAN của cửa hàng (xem issue #4).
 export const attendanceApi = {
-  kioskEmployees(branchId) {
-    return publicHttp.get("/attendance/kiosk/employees", { params: { branchId } });
+  kioskEmployees(branchId, params = {}) {
+    return publicHttp.get("/attendance/kiosk/employees", { params: { branchId, ...params } });
   },
   checkIn(payload) {
     return publicHttp.post("/attendance/check-in", payload);

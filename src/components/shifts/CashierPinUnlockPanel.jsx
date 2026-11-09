@@ -289,6 +289,8 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
                 ) : (
                   <StatusTag status="ACTIVE" variant="success" label="Sẵn sàng mở khóa" />
                 )
+              ) : !loadingCashiers && cashiers.length === 0 ? (
+                <StatusTag status="INACTIVE" variant="warn" label="Ngoài giờ ca" />
               ) : null}
             </div>
             <Form.Select
@@ -302,7 +304,7 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
             >
               {cashiers.length === 0 ? (
                 <option value="">
-                  {loadingCashiers ? "Đang tải danh sách thu ngân…" : "Chi nhánh chưa có thu ngân hoạt động"}
+                  {loadingCashiers ? "Đang tải danh sách thu ngân…" : "Chưa đến giờ ca hoặc ca hiện tại chưa có thu ngân"}
                 </option>
               ) : (
                 cashiers.map((c) => (
@@ -314,6 +316,13 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
               )}
             </Form.Select>
             {cashierLoadError ? <div className="field-error mt-1">{cashierLoadError}</div> : null}
+            {!loadingCashiers && cashiers.length === 0 ? (
+              <div className="notice notice--neutral mt-2">
+                <span>
+                  Chỉ hiển thị nhân sự được phân công làm Thu ngân (bao gồm nhân sự gán quyền tạm) trong ca làm việc tại thời điểm hiện tại.
+                </span>
+              </div>
+            ) : null}
           </Form.Group>
 
           {selectedCashier && !selectedCashier.hasPin ? (
