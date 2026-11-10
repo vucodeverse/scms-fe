@@ -39,7 +39,6 @@ export default function HrShiftReportPage() {
   return (
     <ReportLayout
       title="Báo cáo nhân sự & ca làm việc"
-      screenCode="SCR-15 · UC39"
       description="Ca được phân công / đã làm, vắng, đi muộn, về sớm, quên check-out và tổng giờ công theo nhân viên."
       actions={<ExportButton type={REPORT_TYPES.HR_SHIFTS} params={params} disabled={!data || data.empty || loading} />}
     >

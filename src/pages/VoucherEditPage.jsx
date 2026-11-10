@@ -159,7 +159,6 @@ export default function VoucherEditPage() {
     return (
       <TaskLayout
         title="Không tìm thấy voucher"
-        screenCode="SCR-12"
         codeLabel="Khuyến mãi & Voucher"
         backTo="/chain/vouchers"
       >
@@ -176,7 +175,6 @@ export default function VoucherEditPage() {
     <TaskLayout
       title={editingId ? `Sửa voucher · ${form.code || ""}` : "Thêm voucher"}
       subtitle="Điều kiện áp dụng, thời gian hiệu lực và phạm vi áp dụng."
-      screenCode="SCR-12"
       codeLabel="Khuyến mãi & Voucher"
       backTo="/chain/vouchers"
       meta={
@@ -208,7 +206,7 @@ export default function VoucherEditPage() {
             {locked ? (
               <div className="notice notice--warn mb-3">
                 <span>
-                  Voucher đã có <strong>{usedCount} lượt dùng</strong> — backend không cho phép sửa voucher
+                  Voucher đã có <strong>{usedCount} lượt dùng</strong> — hệ thống không cho phép sửa voucher
                   đã được sử dụng. Có thể ngừng hoạt động hoặc tạo voucher mới.
                 </span>
               </div>

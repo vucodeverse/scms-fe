@@ -206,7 +206,6 @@ export default function ProductEditPage() {
     return (
       <TaskLayout
         title="Không tìm thấy sản phẩm"
-        screenCode="TAB-05"
         codeLabel="Menu & BOM"
         backTo="/chain/menu"
       >
@@ -223,7 +222,6 @@ export default function ProductEditPage() {
     <TaskLayout
       title={editingId ? `Sửa sản phẩm · ${form.name || ""}` : "Thêm sản phẩm"}
       subtitle="Thông tin menu, giá bán theo size và topping áp dụng."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu"
       meta={

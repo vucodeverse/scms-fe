@@ -518,7 +518,7 @@ export default function ShiftScheduleModal({
                 Nhân viên được gán vào ca ({selectedIds.length}/{activeEmployees.length})
               </div>
               <div className="small text-muted-scms">
-                Hệ thống tự kiểm tra trùng khung giờ (BR-15) và cho phép chọn vai trò kiêm nhiệm riêng trong ca mà không đổi chức danh gốc sau hết ca.
+                Hệ thống tự kiểm tra trùng khung giờ và cho phép chọn vai trò kiêm nhiệm riêng trong ca mà không đổi chức danh gốc sau hết ca.
               </div>
             </div>
             <div className="d-flex gap-1">
@@ -563,7 +563,7 @@ export default function ShiftScheduleModal({
             <div className="notice notice--warn mb-2">
               <strong>!</strong>
               <span>
-                Nhân viên đang chọn bị trùng giờ với ca khác (BR-15):{" "}
+                Nhân viên đang chọn bị trùng giờ với ca khác:{" "}
                 {selectedConflicts
                   .map(
                     ({ emp, shift }) =>

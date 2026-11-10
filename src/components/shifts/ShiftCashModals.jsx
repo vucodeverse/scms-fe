@@ -60,10 +60,10 @@ export function CashAdjustmentModal({
       errs.amount = `Số dư két hiện tại (${formatVnd(currentCashBalance)}) không đủ để rút.`;
     }
     if (!reason.trim()) {
-      errs.reason = "Bắt buộc nhập lý do nạp/rút tiền (BR-37).";
+      errs.reason = "Bắt buộc nhập lý do nạp/rút tiền.";
     }
     if (!pinOptional && !managerPin.trim()) {
-      errs.managerPin = "Bắt buộc nhập mã PIN Quản lý chi nhánh để duyệt (BR-32).";
+      errs.managerPin = "Bắt buộc nhập mã PIN Quản lý chi nhánh để duyệt.";
     }
 
     if (Object.keys(errs).length > 0) {
@@ -190,7 +190,7 @@ export function CashAdjustmentModal({
           </FormField>
 
           <FormField
-            label={pinOptional ? "Mã PIN Quản lý xác nhận thêm (tùy chọn)" : "Mã PIN Quản lý duyệt (BR-32)"}
+            label={pinOptional ? "Mã PIN Quản lý xác nhận thêm (tùy chọn)" : "Mã PIN Quản lý duyệt"}
             required={!pinOptional}
             error={fieldErrors.managerPin}
             help={
@@ -286,7 +286,7 @@ export function CloseShiftModal({
       errs.countedCash = "Vui lòng nhập số tiền mặt thực đếm >= 0.";
     }
     if (hasVariance && !discrepancyReason.trim()) {
-      errs.discrepancyReason = "Phát hiện chênh lệch két — bắt buộc nhập lý do giải trình (BR-38).";
+      errs.discrepancyReason = "Phát hiện chênh lệch két — bắt buộc nhập lý do giải trình.";
     }
     if (requirePin) {
       if (!cleanPin) {
@@ -356,7 +356,7 @@ export function CloseShiftModal({
       <Form noValidate onSubmit={handleSubmit}>
         <Modal.Body>
           <div className="small text-muted-scms mb-3">
-            Ngày {formatDate(shift?.shiftDate)} · Kiểm đếm tiền mặt thực tế trong két và đối chiếu với sổ sách theo quy định BR-38.
+            Ngày {formatDate(shift?.shiftDate)} · Kiểm đếm tiền mặt thực tế trong két và đối chiếu với sổ sách.
           </div>
 
           {shift?.handoverPending ? (
@@ -477,7 +477,7 @@ export function CloseShiftModal({
             error={fieldErrors.discrepancyReason}
             help={
               hasVariance
-                ? "Bắt buộc theo BR-38 khi tiền thực đếm khác tiền dự kiến."
+                ? "Bắt buộc nhập giải trình khi tiền thực đếm khác tiền dự kiến."
                 : "Không bắt buộc khi tiền két khớp."
             }
             className={requirePin ? "mb-3" : "mb-0"}
@@ -615,7 +615,7 @@ export function ApproveEarlyCloseModal({
       errs.countedCash = "Số tiền kiểm đếm thực tế phải >= 0.";
     }
     if (hasVariance && !discrepancyReason.trim()) {
-      errs.discrepancyReason = "Phát hiện chênh lệch két — bắt buộc nhập giải trình (BR-38).";
+      errs.discrepancyReason = "Phát hiện chênh lệch két — bắt buộc nhập giải trình.";
     }
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
@@ -729,7 +729,7 @@ export function ApproveEarlyCloseModal({
           ) : null}
 
           <FormField
-            label="Giải trình chênh lệch (BR-38)"
+            label="Giải trình chênh lệch"
             required={hasVariance}
             error={fieldErrors.discrepancyReason}
           >

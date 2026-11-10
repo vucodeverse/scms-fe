@@ -120,7 +120,7 @@ export default function CategoryDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy danh mục" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
+      <TaskLayout title="Không tìm thấy danh mục" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Danh mục không tồn tại. Quay lại Menu & BOM.</span>
@@ -134,7 +134,6 @@ export default function CategoryDetailPage() {
     <TaskLayout
       title={category ? `Chi tiết danh mục · ${category.name}` : "Chi tiết danh mục"}
       subtitle="Hồ sơ danh mục và các sản phẩm đang thuộc danh mục."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu?tab=categories"
       meta={
@@ -264,7 +263,7 @@ export default function CategoryDetailPage() {
                 </p>
               ) : confirm === "soft" ? (
                 <p className="mb-0">
-                  Xoá mềm danh mục <strong>{category.name}</strong>? Backend thực hiện xoá mềm bằng cách
+                  Xoá mềm danh mục <strong>{category.name}</strong>? Hệ thống thực hiện xoá mềm bằng cách
                   chuyển danh mục sang trạng thái Ngừng hoạt động; sản phẩm thuộc danh mục không bị xoá
                   và không bị chuyển đi.
                 </p>

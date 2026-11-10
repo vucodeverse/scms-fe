@@ -174,7 +174,7 @@ export default function EmployeeEditPage() {
 
   if (unassignedManager) {
     return (
-      <TaskLayout title="Hồ sơ nhân sự" screenCode="TAB-03" codeLabel="Hồ sơ nhân sự" backTo={backPath}>
+      <TaskLayout title="Hồ sơ nhân sự" backTo={backPath}>
         <UnassignedManagerNotice />
       </TaskLayout>
     );
@@ -182,7 +182,7 @@ export default function EmployeeEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy nhân viên" screenCode="TAB-03" codeLabel="Hồ sơ nhân sự" backTo={backPath}>
+      <TaskLayout title="Không tìm thấy nhân viên" codeLabel="Hồ sơ nhân sự" backTo={backPath}>
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Hồ sơ không tồn tại hoặc nằm ngoài chi nhánh của bạn. Quay lại danh sách nhân sự.</span>
@@ -196,7 +196,6 @@ export default function EmployeeEditPage() {
     <TaskLayout
       title={editingId ? `Sửa hồ sơ · ${form.fullName || ""}` : "Thêm nhân viên"}
       subtitle="Thông tin nhân sự, PIN chấm công và tài khoản đăng nhập."
-      screenCode="TAB-03"
       codeLabel="Hồ sơ nhân sự"
       backTo={backPath}
       meta={
@@ -221,7 +220,7 @@ export default function EmployeeEditPage() {
                   <p>
                     {isCoo
                       ? "COO quản lý hồ sơ của mọi chi nhánh."
-                      : `Chi nhánh ${user?.branchName || ""} — hồ sơ ngoài chi nhánh sẽ bị backend từ chối.`}
+                      : `Chi nhánh ${user?.branchName || ""} — hồ sơ ngoài chi nhánh sẽ bị hệ thống từ chối.`}
                   </p>
                 </div>
               </div>

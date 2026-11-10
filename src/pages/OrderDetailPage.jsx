@@ -144,7 +144,6 @@ export default function OrderDetailPage() {
     >
       <PageHeader
         title={order ? `Đơn ${order.receiptNo || "#" + order.id}` : "Chi tiết đơn hàng"}
-        screenCode="SCR-05 · Chi tiết đơn"
         description="Thông tin đơn, các món đã gọi và các thao tác thanh toán / hủy đơn."
         actions={
           <div className="d-flex gap-2">

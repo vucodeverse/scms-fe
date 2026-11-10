@@ -320,7 +320,6 @@ export default function ChainSyncPage() {
     >
       <PageHeader
         title="Đồng bộ chuỗi xuống chi nhánh"
-        screenCode="UC14 · SCR-11"
         description="Phát hành danh mục, sản phẩm, bảng giá và voucher được chọn từ chuỗi xuống các chi nhánh mục tiêu."
         actions={
           <Button variant="outline-secondary" onClick={() => navigate("/chain/menu")}>

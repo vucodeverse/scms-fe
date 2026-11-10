@@ -3,7 +3,7 @@ import { formatTime } from "../lib/format.js";
 
 // Kiosk shell (mục 5.2): full-screen, tương phản cao, đồng hồ lớn.
 // Dùng cho SCR-02 — chấm công tại quầy (touch-first).
-export default function KioskLayout({ branchName = null, screenCode = "SCR-02", children }) {
+export default function KioskLayout({ branchName = null, screenCode = null, children }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export default function KioskLayout({ branchName = null, screenCode = "SCR-02", 
         </div>
         <div className="text-end">
           <div className="kiosk-clock">{formatTime(now)}</div>
-          <span className="screen-code">{screenCode}</span>
+          {screenCode ? <span className="screen-code">{screenCode}</span> : null}
         </div>
       </header>
       <main className="flex-grow-1 d-flex flex-column">{children}</main>

@@ -191,7 +191,6 @@ export default function EmployeesPage() {
     >
       <PageHeader
         title="Hồ sơ nhân sự"
-        screenCode="SCR-09 · TAB-03"
         description="Quản lý hồ sơ, vai trò, PIN và thẻ RFID của nhân viên tại chi nhánh."
         actions={
           unassignedManager ? null : (

@@ -117,7 +117,7 @@ export default function StocktakePage() {
   return (
     <TaskLayout
       title="Kiểm kê kho"
-      screenCode="SCR-14 · Kiểm kê"
+      codeLabel="Kho"
       backTo="/branch/inventory"
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}

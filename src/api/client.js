@@ -41,7 +41,7 @@ function toApiError(error) {
   if (error instanceof ApiError) return error;
   const response = error?.response;
   if (!response) {
-    return new ApiError({ message: "Không kết nối được tới máy chủ. Kiểm tra backend đang chạy và thử lại." });
+    return new ApiError({ message: "Không kết nối được tới máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại." });
   }
   const body = response.data || {};
   return new ApiError({

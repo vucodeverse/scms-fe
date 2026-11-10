@@ -49,10 +49,6 @@ export default function LoginPage() {
 
   return (
     <AuthLayout>
-      <div className="page-code">
-        <span>SCR-01</span>
-        <b>LOGIN</b>
-      </div>
       <h2 className="mb-1">Đăng nhập vận hành</h2>
       <p className="text-muted-scms mb-4" style={{ fontSize: 13 }}>
         Đăng nhập để vào đúng phạm vi nghiệp vụ của bạn.

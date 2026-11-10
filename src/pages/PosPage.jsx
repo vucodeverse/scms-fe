@@ -554,7 +554,6 @@ export default function PosPage() {
     >
       <PageHeader
         title="Bán hàng tại quầy"
-        screenCode="SCR-04 · POS"
         description="Chọn món, tạo đơn và thu tiền mặt hoặc VietQR."
         actions={
           <div className="d-flex align-items-center justify-content-end flex-wrap gap-2">
@@ -622,7 +621,7 @@ export default function PosPage() {
             <span>
               {shiftBanner?.error
                 ? shiftBanner.error
-                : "Chưa thể gọi món POS khi chi nhánh chưa kiểm két và mở ca bán hàng (BR-36)."}
+                : "Chưa thể gọi món POS khi chi nhánh chưa kiểm két và mở ca bán hàng."}
             </span>
           </div>
           <h2 className="mb-2">Vui lòng kiểm két &amp; mở ca trước khi bán hàng</h2>

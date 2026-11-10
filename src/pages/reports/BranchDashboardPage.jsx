@@ -77,7 +77,6 @@ export default function BranchDashboardPage() {
   return (
     <ReportLayout
       title="Tổng quan chi nhánh"
-      screenCode="SCR-07 · UC34"
       description={
         data
           ? `${data.branchName} · ngày ${formatDate(data.date)} · cập nhật lúc ${formatTime(data.generatedAt)}`

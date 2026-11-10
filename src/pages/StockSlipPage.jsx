@@ -14,17 +14,14 @@ import { fmtQty } from "./InventoryPage.jsx";
 const META = {
   receive: {
     title: "Phiếu nhập kho",
-    code: "SCR-14 · Nhập kho",
     submitLabel: "Lập phiếu nhập",
   },
   issue: {
     title: "Phiếu xuất quầy bar",
-    code: "SCR-14 · Xuất kho",
     submitLabel: "Lập phiếu xuất",
   },
   dispose: {
     title: "Phiếu hủy hàng",
-    code: "SCR-14 · Hủy hàng",
     submitLabel: "Lập phiếu hủy",
   },
 };
@@ -189,7 +186,7 @@ export default function StockSlipPage() {
   return (
     <TaskLayout
       title={meta.title}
-      screenCode={meta.code}
+      codeLabel="Kho"
       backTo="/branch/inventory"
       userName={user?.fullName}
       userRole={roleLabel(user?.role)}

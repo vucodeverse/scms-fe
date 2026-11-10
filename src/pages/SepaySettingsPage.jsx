@@ -124,7 +124,6 @@ export default function SepaySettingsPage() {
     >
       <PageHeader
         title="SePay & thanh toán"
-        screenCode="SCR-16 · TAB-10"
         description="Tài khoản nhận chuyển khoản và webhook xác nhận thanh toán VietQR cho toàn chuỗi."
       />
 

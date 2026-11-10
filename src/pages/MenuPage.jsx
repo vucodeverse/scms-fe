@@ -32,7 +32,6 @@ export default function MenuPage() {
     >
       <PageHeader
         title="Menu & BOM"
-        screenCode={activeTab === "recipe" ? "SCR-11 · TAB-06" : "SCR-11 · TAB-05"}
         description="Quản trị danh mục, giá bán và công thức chuẩn toàn chuỗi."
         actions={
           user?.role === "COO" ? (

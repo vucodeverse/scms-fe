@@ -177,7 +177,6 @@ export default function InventoryPage() {
     >
       <PageHeader
         title="Kho"
-        screenCode="SCR-14 · Kho"
         description="Tồn kho nguyên liệu của chi nhánh, cảnh báo sắp hết và các phiếu nhập / xuất / hủy, kiểm kê."
         actions={
           unassignedManager ? null : (

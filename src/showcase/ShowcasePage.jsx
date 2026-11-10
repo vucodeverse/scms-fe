@@ -22,7 +22,7 @@ const MENU = [
     group: "Design system",
     items: [
       { key: "admin", label: "Admin shell + components", path: "/_showcase" },
-      { key: "session", label: "Phiên đăng nhập (FE-02)", path: "/_showcase/session" },
+      { key: "session", label: "Phiên đăng nhập", path: "/_showcase/session" },
       { key: "auth", label: "Auth shell", path: "/_showcase/auth" },
       { key: "kiosk", label: "Kiosk shell", path: "/_showcase/kiosk" },
       { key: "task", label: "Task shell", path: "/_showcase/task" },
@@ -43,11 +43,10 @@ export function ShowcaseAdminPage() {
   const [page, setPage] = useState(1);
 
   return (
-    <AdminLayout menu={MENU} branchName="Chi nhánh mẫu" screenCode="FE-01">
+    <AdminLayout menu={MENU} branchName="Chi nhánh mẫu">
       <PageHeader
         title="Design system"
-        screenCode="FE-01"
-        description="Components chuẩn theo tài liệu thiết kế của prototype."
+        description="Bộ thành phần giao diện chuẩn của hệ thống."
         actions={<Button variant="primary" onClick={() => toast.success("Toast mẫu: thao tác thành công.")}>Hành động chính</Button>}
       />
 
@@ -145,10 +144,10 @@ export function ShowcaseAdminPage() {
 export function ShowcaseAuthPage() {
   const { navigate } = useRouter();
   return (
-    <AuthLayout screenCode="SCR-01">
+    <AuthLayout>
       <h2 className="mb-2">Auth shell</h2>
       <p className="text-muted-scms mb-4">
-        Khung split-screen cho màn hình đăng nhập. Form đăng nhập thật thuộc issue FE-03.
+        Khung split-screen cho màn hình đăng nhập.
       </p>
       <Button variant="outline-secondary" onClick={() => navigate("/_showcase")}>
         ← Về showcase
@@ -164,7 +163,7 @@ export function ShowcaseKioskPage() {
       <div className="scms-panel p-4" style={{ maxWidth: 640 }}>
         <h2 className="mb-2">Kiosk shell</h2>
         <p className="text-muted-scms mb-4">
-          Khung full-screen với đồng hồ lớn cho kiosk chấm công. Luồng chấm công thật thuộc issue FE-04.
+          Khung full-screen với đồng hồ lớn cho kiosk chấm công.
         </p>
         <div className="d-flex gap-3">
           <Button size="lg" variant="primary" style={{ minHeight: 56, minWidth: 160 }}>
@@ -184,7 +183,6 @@ export function ShowcaseTaskPage() {
   return (
     <TaskLayout
       title="Task shell"
-      screenCode="TASK"
       backTo="/_showcase"
       actions={
         <>
@@ -197,8 +195,8 @@ export function ShowcaseTaskPage() {
     >
       <div className="scms-panel p-4" style={{ maxWidth: 720 }}>
         <p className="text-muted-scms mb-0">
-          Khung màn hình tác vụ: header có nút quay lại và mã màn hình, thanh hành động dính ở đáy.
-          Các màn hình tạo/sửa của từng issue nghiệp vụ sẽ dùng shell này.
+          Khung màn hình tác vụ: header có nút quay lại, thanh hành động dính ở đáy.
+          Các màn hình tạo/sửa nghiệp vụ sẽ dùng shell này.
         </p>
       </div>
     </TaskLayout>

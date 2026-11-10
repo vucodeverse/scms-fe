@@ -51,7 +51,6 @@ export default function SalesReportPage() {
   return (
     <ReportLayout
       title="Báo cáo doanh số"
-      screenCode="SCR-15 · UC35"
       description="Chỉ tính đơn đã thanh toán. Doanh thu thuần = doanh thu − hoàn tiền."
       actions={<ExportButton type={REPORT_TYPES.SALES} params={params} disabled={!data || data.empty || loading} />}
     >

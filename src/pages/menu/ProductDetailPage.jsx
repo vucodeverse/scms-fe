@@ -99,7 +99,7 @@ export default function ProductDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy sản phẩm" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu">
+      <TaskLayout title="Không tìm thấy sản phẩm" codeLabel="Menu & BOM" backTo="/chain/menu">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Sản phẩm không tồn tại. Quay lại menu.</span>
@@ -117,7 +117,6 @@ export default function ProductDetailPage() {
     <TaskLayout
       title={product ? `Chi tiết món · ${product.name}` : "Chi tiết món"}
       subtitle="Thông tin món, giá theo size, topping áp dụng và công thức."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu"
       meta={

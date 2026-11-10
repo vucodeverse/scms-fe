@@ -53,7 +53,6 @@ export default function InventoryReportPage() {
   return (
     <ReportLayout
       title="Báo cáo xuất - nhập - tồn kho"
-      screenCode="SCR-15 · UC38"
       description="Tồn đầu kỳ, nhập, xuất quầy bar, hủy (hao hụt), điều chỉnh, tồn cuối kỳ và chênh lệch kiểm kê gần nhất."
       actions={<ExportButton type={REPORT_TYPES.INVENTORY} params={params} disabled={!data || data.empty || loading} />}
     >

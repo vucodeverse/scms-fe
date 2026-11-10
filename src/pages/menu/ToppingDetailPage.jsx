@@ -108,7 +108,7 @@ export default function ToppingDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy topping" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
+      <TaskLayout title="Không tìm thấy topping" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Topping không tồn tại. Quay lại Menu & BOM.</span>
@@ -122,7 +122,6 @@ export default function ToppingDetailPage() {
     <TaskLayout
       title={topping ? `Chi tiết topping · ${topping.name}` : "Chi tiết topping"}
       subtitle="Giá mặc định và các sản phẩm đang áp dụng topping."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu?tab=toppings"
       meta={

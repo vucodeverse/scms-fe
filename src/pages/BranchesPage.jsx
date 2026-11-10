@@ -138,7 +138,6 @@ export default function BranchesPage() {
     >
       <PageHeader
         title="Chi nhánh & Manager"
-        screenCode="SCR-13"
         description="Hồ sơ chi nhánh, quản lý phụ trách và trạng thái kết nối POS."
         actions={
           <div className="d-flex gap-2">

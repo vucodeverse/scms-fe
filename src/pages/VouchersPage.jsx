@@ -150,7 +150,6 @@ export default function VouchersPage() {
     >
       <PageHeader
         title="Khuyến mãi & Voucher"
-        screenCode="SCR-12"
         description="Quản lý chương trình giảm giá, điều kiện áp dụng và giới hạn lượt dùng."
         actions={
           <Button variant="primary" onClick={() => navigate("/chain/vouchers/edit")}>

@@ -157,7 +157,7 @@ export default function BranchEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy chi nhánh" screenCode="SCR-13" codeLabel="Chi nhánh" backTo="/chain/branches">
+      <TaskLayout title="Không tìm thấy chi nhánh" codeLabel="Chi nhánh" backTo="/chain/branches">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Chi nhánh không tồn tại. Quay lại danh sách.</span>
@@ -171,7 +171,6 @@ export default function BranchEditPage() {
     <TaskLayout
       title={editingId ? `Sửa chi nhánh · ${form.code || ""}` : "Thêm chi nhánh"}
       subtitle="Hồ sơ vận hành và phân công quản lý phụ trách."
-      screenCode="SCR-13"
       codeLabel="Chi nhánh"
       backTo="/chain/branches"
       meta={

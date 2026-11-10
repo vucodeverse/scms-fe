@@ -100,7 +100,7 @@ export default function BranchDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy chi nhánh" screenCode="SCR-13" codeLabel="Chi nhánh" backTo="/chain/branches">
+      <TaskLayout title="Không tìm thấy chi nhánh" codeLabel="Chi nhánh" backTo="/chain/branches">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Chi nhánh không tồn tại. Quay lại danh sách.</span>
@@ -114,7 +114,6 @@ export default function BranchDetailPage() {
     <TaskLayout
       title={branch ? `Chi tiết chi nhánh · ${branch.code}` : "Chi tiết chi nhánh"}
       subtitle="Hồ sơ đầy đủ, gắn/đổi quản lý phụ trách và nhân viên tại chi nhánh."
-      screenCode="SCR-13"
       codeLabel="Chi nhánh"
       backTo="/chain/branches"
       meta={
@@ -191,7 +190,7 @@ export default function BranchDetailPage() {
             body={
               <>
                 Xoá mềm chi nhánh <strong>{branch.name}</strong> ({branch.code})? Chi nhánh chuyển sang
-                trạng thái Ngừng hoạt động và tự gỡ quản lý phụ trách. Backend sẽ từ chối nếu chi nhánh còn
+                trạng thái Ngừng hoạt động và tự gỡ quản lý phụ trách. Hệ thống sẽ từ chối nếu chi nhánh còn
                 nhân viên đang hoạt động.
               </>
             }

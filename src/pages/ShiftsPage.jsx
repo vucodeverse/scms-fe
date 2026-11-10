@@ -743,7 +743,6 @@ export default function ShiftsPage() {
       >
         <PageHeader
           title="Kiểm két & Ca làm việc"
-          screenCode="SCR-08 · PIN UNLOCK"
           description="Thu ngân chọn tên và nhập mã PIN 4 số để kiểm két đầu ca (so với kết ca cũ), tự động check-in khi mở ca và nhập PIN xác nhận check-out khi đóng ca."
         />
         <CashierPinUnlockPanel
@@ -813,7 +812,6 @@ export default function ShiftsPage() {
               ? "Theo dõi ca & két chi nhánh"
               : "Kiểm két & Ca làm việc"
         }
-        screenCode="SCR-08 · UC08 / UC24–27"
         description={
           isCashier
             ? "Thu ngân kiểm két đầu ca so với kết ca cũ, mở ca bán hàng và nhập tiền thực đếm cuối ca."

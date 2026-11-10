@@ -425,9 +425,6 @@ export default function KioskPage() {
 
       <section className="kiosk-right">
         <div className="kiosk-panel">
-          <div className="page-code mb-2">
-            SCR-02 <b>ATTENDANCE KIOSK</b>
-          </div>
           <h1>Chấm công ca làm</h1>
           <p>Chọn nhân viên đã phân ca, nhập PIN 4 số và xác nhận check-in/check-out.</p>
 

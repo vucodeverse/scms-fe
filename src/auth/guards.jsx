@@ -35,8 +35,7 @@ export function RequireRole({ roles = [], children }) {
       <div className="scms-panel p-4" style={{ maxWidth: 560, margin: "48px auto" }}>
         <h2 className="mb-2">Không có quyền truy cập</h2>
         <p className="text-muted-scms">
-          Vai trò hiện tại ({user.role}) không được phép mở màn hình này. Việc kiểm soát quyền
-          thực tế do backend thực thi; màn hình này chỉ phản ánh đúng kết quả đó.
+          Vai trò hiện tại ({user.role}) không được phép mở màn hình này.
         </p>
         <Button variant="outline-secondary" onClick={() => navigate("/")}>
           Về trang chính

@@ -255,7 +255,6 @@ export default function OrdersPage() {
     >
       <PageHeader
         title="Đơn hàng"
-        screenCode="SCR-05 · Đơn hàng"
         description={
           isCashierScope
             ? "Đơn bán tại quầy thuộc ca làm việc đang mở của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."

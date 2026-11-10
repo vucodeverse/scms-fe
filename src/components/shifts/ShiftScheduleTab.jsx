@@ -393,7 +393,7 @@ export default function ShiftScheduleTab({
             {SHIFT_TYPE_META.EVENING.window} · {SHIFT_TYPE_META.NIGHT.window}) hoặc chồng giờ hoạt động.
             {effectiveCanManage
               ? " Bấm Gán NV/Sửa ở thẻ ca được đánh dấu để đưa vào đúng phạm vi ca."
-              : " Quản lý chi nhánh cần chỉnh lại khung giờ ca để tránh xung đột phân ca (BR-15)."}
+              : " Quản lý chi nhánh cần chỉnh lại khung giờ ca để tránh xung đột phân ca."}
           </span>
         </div>
       ) : null}
@@ -635,7 +635,7 @@ export default function ShiftScheduleTab({
 
       <div className="d-flex justify-content-between flex-wrap gap-2 mt-2 small text-muted-scms">
         <span>
-          Quy định BR-15: Không thể phân công trùng khung giờ cho cùng một nhân viên.
+          Lưu ý: Không thể phân công trùng khung giờ cho cùng một nhân viên.
         </span>
         <span>
           Chấm xanh trên thẻ tên biểu thị nhân viên đang trong ca chấm công Kiosk hôm nay.

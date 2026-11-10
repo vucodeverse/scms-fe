@@ -121,7 +121,7 @@ export default function CategoryEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy danh mục" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
+      <TaskLayout title="Không tìm thấy danh mục" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Danh mục không tồn tại. Quay lại Menu & BOM.</span>
@@ -135,7 +135,6 @@ export default function CategoryEditPage() {
     <TaskLayout
       title={isEdit ? `Sửa danh mục · ${name || code}` : "Thêm danh mục"}
       subtitle="Tên, thứ tự hiển thị trên menu và các sản phẩm thuộc danh mục."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo={isEdit ? `/chain/menu/category-detail?id=${editingId}` : "/chain/menu?tab=categories"}
       meta={

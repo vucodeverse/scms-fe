@@ -133,7 +133,7 @@ export default function RolesPage() {
     setSaving(true);
     try {
       await rolesApi.updatePermissions(activeRole.roleId, draft);
-      toast.success(`Đã lưu phân quyền cho ${activeRole.name}. Thay đổi mất khi backend khởi động lại.`);
+      toast.success(`Đã lưu phân quyền cho ${activeRole.name}. Lưu ý thay đổi tạm thời sẽ mất khi máy chủ khởi động lại.`);
       setEditing(false);
       await loadRoles();
     } catch (err) {
@@ -171,7 +171,6 @@ export default function RolesPage() {
     >
       <PageHeader
         title="Vai trò & phân quyền"
-        screenCode="SCR-16 · TAB-09"
         description="Ma trận quyền theo vai trò và gán vai trò cho nhân viên."
       />
 
@@ -212,7 +211,7 @@ export default function RolesPage() {
                   <h2>Ma trận phân quyền · {POSITION_LABELS[activeRole.code] || activeRole.name}</h2>
                   <p>
                     {activeRole.description || "Danh sách quyền chức năng của vai trò."} Việc kiểm soát
-                    truy cập thật nằm ở backend theo vai trò; ma trận này là lớp quyền chức năng đi kèm.
+                    truy cập thực tế do máy chủ thực thi theo vai trò; ma trận này là lớp quyền chức năng đi kèm.
                   </p>
                 </div>
                 <StatusTag
@@ -239,8 +238,8 @@ export default function RolesPage() {
               {editing ? (
                 <div className="notice notice--warn mb-3">
                   <span>
-                    <strong>Cảnh báo:</strong> backend hiện lưu phân quyền trong bộ nhớ — thay đổi sẽ{" "}
-                    <strong>mất khi hệ thống khởi động lại</strong> và không thay đổi cơ chế kiểm soát
+                    <strong>Cảnh báo:</strong> hệ thống hiện lưu cấu hình phân quyền này trong bộ nhớ tạm — thay đổi sẽ{" "}
+                    <strong>mất khi máy chủ khởi động lại</strong> và không thay đổi cơ chế kiểm soát
                     truy cập theo vai trò. Chỉ lưu khi bạn chấp nhận giới hạn này.
                   </span>
                 </div>
