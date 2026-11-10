@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Form, Modal, Spinner } from "react-bootstrap";
+import { Button, Form, InputGroup, Modal, Spinner } from "react-bootstrap";
 import FormField from "../FormField.jsx";
+import PinCodeBoxes from "../PinCodeBoxes.jsx";
 import { useToast } from "../ToastContext.jsx";
-import { authApi } from "../../api/authApi.js";
 import { shiftsApi } from "../../api/shiftsApi.js";
 import { POSITION_LABELS } from "../../config/userConstants.js";
-import { formatDateTime, formatVnd } from "../../lib/format.js";
+import { formatDateTime, formatMoneyInput, formatVnd, parseMoneyDigits } from "../../lib/format.js";
 import { SHIFT_TYPE_META, actorName, formatSignedVnd } from "./shiftUtils.js";
 
 const HANDOVER_REASON_PRESETS = [
@@ -20,9 +20,7 @@ export function InitiateHandoverModal({
   show,
   summary,
   userRole,
-  branchId,
   currentUserId,
-  employees = [],
   employeeMap = {},
   onClose,
   onSuccess,
@@ -37,9 +35,7 @@ export function InitiateHandoverModal({
   const [countedCash, setCountedCash] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
-  const [expectedIncomingUserId, setExpectedIncomingUserId] = useState("");
   const [pin, setPin] = useState("");
-  const [cashierCandidates, setCashierCandidates] = useState([]);
   const [fieldErrors, setFieldErrors] = useState({});
   const [apiError, setApiError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,53 +45,10 @@ export function InitiateHandoverModal({
     setCountedCash("");
     setReason("");
     setNote("");
-    setExpectedIncomingUserId("");
     setPin("");
     setFieldErrors({});
     setApiError("");
   }, [show, shift?.id]);
-
-  useEffect(() => {
-    if (!show || !branchId) return;
-    if (employees.length > 0) {
-      setCashierCandidates([]);
-      return;
-    }
-    let alive = true;
-    authApi
-      .cashiers(branchId)
-      .then((list) => {
-        if (alive) setCashierCandidates(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (alive) setCashierCandidates([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [show, branchId, employees.length]);
-
-  const incomingOptions = useMemo(() => {
-    if (employees.length > 0) {
-      return employees
-        .filter((e) => (!e.status || e.status === "ACTIVE") && e.id !== currentHolderId)
-        .filter((e) => e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER")
-        .sort((a, b) => {
-          if (a.roleCode !== b.roleCode) return a.roleCode === "CASHIER" ? -1 : 1;
-          return (a.fullName || "").localeCompare(b.fullName || "", "vi");
-        })
-        .map((e) => ({
-          id: e.id,
-          label: `${e.fullName} (${POSITION_LABELS[e.roleCode] || e.roleCode})`,
-        }));
-    }
-    return cashierCandidates
-      .filter((c) => c.employeeId !== currentHolderId)
-      .map((c) => ({
-        id: c.employeeId,
-        label: `${c.fullName} (Thu ngân)`,
-      }));
-  }, [employees, cashierCandidates, currentHolderId]);
 
   const parsedCounted = countedCash === "" ? NaN : Number(countedCash);
   const variance = !Number.isNaN(parsedCounted) ? parsedCounted - expectedCash : 0;
@@ -118,9 +71,9 @@ export function InitiateHandoverModal({
     }
     if (requirePin) {
       if (!cleanPin) {
-        errs.pin = "Vui lòng nhập mã PIN cá nhân (4–6 số) để xác nhận giao két & tự động Check-out.";
-      } else if (!/^[0-9]{4,6}$/.test(cleanPin)) {
-        errs.pin = "Mã PIN phải gồm từ 4 đến 6 chữ số.";
+        errs.pin = "Vui lòng nhập mã PIN cá nhân (4 số) để xác nhận giao két & tự động Check-out.";
+      } else if (!/^[0-9]{4}$/.test(cleanPin)) {
+        errs.pin = "Mã PIN phải gồm đủ 4 chữ số.";
       }
     }
 
@@ -137,7 +90,7 @@ export function InitiateHandoverModal({
         countedCash: parsedCounted,
         reason: reason.trim(),
         note: note.trim() || null,
-        expectedIncomingUserId: expectedIncomingUserId ? Number(expectedIncomingUserId) : null,
+        expectedIncomingUserId: null,
         ...(cleanPin ? { pin: cleanPin } : {}),
       });
       toast.success(
@@ -203,20 +156,22 @@ export function InitiateHandoverModal({
 
           <FormField label="Số tiền mặt thực đếm tại thời điểm bàn giao (VNĐ)" required error={fieldErrors.countedCash}>
             <div className="d-flex gap-2">
-              <Form.Control
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Đếm thực tế tiền mặt đang có trong két…"
-                value={countedCash}
-                onChange={(e) => {
-                  setCountedCash(e.target.value);
-                  setFieldErrors((f) => ({ ...f, countedCash: null, note: null }));
-                  setApiError("");
-                }}
-                disabled={busy}
-                autoFocus
-              />
+              <InputGroup>
+                <Form.Control
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Đếm thực tế tiền mặt đang có trong két…"
+                  value={formatMoneyInput(countedCash)}
+                  onChange={(e) => {
+                    setCountedCash(parseMoneyDigits(e.target.value));
+                    setFieldErrors((f) => ({ ...f, countedCash: null, note: null }));
+                    setApiError("");
+                  }}
+                  disabled={busy}
+                  autoFocus
+                />
+                <InputGroup.Text>VNĐ</InputGroup.Text>
+              </InputGroup>
               <Button
                 type="button"
                 variant="outline-secondary"
@@ -283,24 +238,6 @@ export function InitiateHandoverModal({
           </FormField>
 
           <FormField
-            label="Người dự kiến nhận ca thay (tùy chọn)"
-            help="Có thể chọn trước người thay thế hoặc để trống nếu Quản lý chi nhánh sẽ đứng quầy / phân người khác nhận sau."
-          >
-            <Form.Select
-              value={expectedIncomingUserId}
-              onChange={(e) => setExpectedIncomingUserId(e.target.value)}
-              disabled={busy}
-            >
-              <option value="">Chưa chốt trước (Quản lý đứng quầy hoặc Thu ngân khác tự mở PIN nhận)</option>
-              {incomingOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </Form.Select>
-          </FormField>
-
-          <FormField
             label={hasVariance ? "Ghi chú giải trình chênh lệch" : "Ghi chú bàn giao cho người nhận"}
             required={hasVariance}
             error={fieldErrors.note}
@@ -326,24 +263,22 @@ export function InitiateHandoverModal({
 
           {requirePin ? (
             <FormField
-              label="Mã PIN Thu ngân (4–6 số) xác nhận bàn giao & Check-out"
+              label="Mã PIN Thu ngân (4 số) xác nhận bàn giao & Check-out"
               required
               error={fieldErrors.pin}
               help="Xác nhận bạn đã kiểm két xong để giao ca và tự động Check-out chấm công."
               className="mb-0"
             >
-              <Form.Control
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="••••"
+              <PinCodeBoxes
                 value={pin}
-                onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                onChange={(nextPin) => {
+                  setPin(nextPin);
                   setFieldErrors((f) => ({ ...f, pin: null }));
                   setApiError("");
                 }}
                 disabled={busy}
+                isInvalid={Boolean(fieldErrors.pin)}
+                ariaLabel="Mã PIN Thu ngân bàn giao ca 4 số"
               />
             </FormField>
           ) : null}
@@ -406,10 +341,19 @@ export function AcceptHandoverModal({
     if (isCashier) return [];
     return employees
       .filter((e) => (!e.status || e.status === "ACTIVE") && e.id !== pending?.fromUserId && e.id !== currentUserId)
-      .filter((e) => e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER")
       .sort((a, b) => {
-        if (a.roleCode !== b.roleCode) return a.roleCode === "CASHIER" ? -1 : 1;
+        const aPriority = a.roleCode === "CASHIER" ? 1 : a.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+        const bPriority = b.roleCode === "CASHIER" ? 1 : b.roleCode === "BRANCH_MANAGER" ? 2 : 3;
+        if (aPriority !== bPriority) return aPriority - bPriority;
         return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+      })
+      .map((e) => {
+        const isOfficial = e.roleCode === "CASHIER" || e.roleCode === "BRANCH_MANAGER";
+        const roleText = POSITION_LABELS[e.roleCode] || e.roleCode;
+        return {
+          ...e,
+          displayLabel: isOfficial ? `${e.fullName} (${roleText})` : `${e.fullName} (${roleText} — Gán tạm Thu ngân)`,
+        };
       });
   }, [isCashier, employees, pending?.fromUserId, currentUserId]);
 
@@ -437,10 +381,10 @@ export function AcceptHandoverModal({
     if (requirePin) {
       if (!cleanPin) {
         errs.pin = pickingAnotherPerson
-          ? "Vui lòng để người được chọn đứng quầy nhập mã PIN cá nhân xác nhận nhận két."
-          : "Vui lòng nhập mã PIN cá nhân (4–6 số) xác nhận nhận két & tự động Check-in.";
-      } else if (!/^[0-9]{4,6}$/.test(cleanPin)) {
-        errs.pin = "Mã PIN phải gồm từ 4 đến 6 chữ số.";
+          ? "Vui lòng để người được chọn đứng quầy nhập mã PIN cá nhân (4 số) xác nhận nhận két."
+          : "Vui lòng nhập mã PIN cá nhân (4 số) xác nhận nhận két & tự động Check-in.";
+      } else if (!/^[0-9]{4}$/.test(cleanPin)) {
+        errs.pin = "Mã PIN phải gồm đủ 4 chữ số.";
       }
     }
 
@@ -561,7 +505,7 @@ export function AcceptHandoverModal({
                 </option>
                 {managerAssignableUsers.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.fullName} ({POSITION_LABELS[emp.roleCode] || emp.roleCode})
+                    {emp.displayLabel || `${emp.fullName} (${POSITION_LABELS[emp.roleCode] || emp.roleCode})`}
                   </option>
                 ))}
               </Form.Select>
@@ -570,20 +514,22 @@ export function AcceptHandoverModal({
 
           <FormField label="Số tiền mặt thực tế bạn đếm lại khi nhận két (VNĐ)" required error={fieldErrors.countedCash}>
             <div className="d-flex gap-2">
-              <Form.Control
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Nhập số tiền bạn đếm lại được trong két…"
-                value={countedCash}
-                onChange={(e) => {
-                  setCountedCash(e.target.value);
-                  setFieldErrors((f) => ({ ...f, countedCash: null, note: null }));
-                  setApiError("");
-                }}
-                disabled={busy || isSameInitiatorCashier}
-                autoFocus
-              />
+              <InputGroup>
+                <Form.Control
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Nhập số tiền bạn đếm lại được trong két…"
+                  value={formatMoneyInput(countedCash)}
+                  onChange={(e) => {
+                    setCountedCash(parseMoneyDigits(e.target.value));
+                    setFieldErrors((f) => ({ ...f, countedCash: null, note: null }));
+                    setApiError("");
+                  }}
+                  disabled={busy || isSameInitiatorCashier}
+                  autoFocus
+                />
+                <InputGroup.Text>VNĐ</InputGroup.Text>
+              </InputGroup>
               <Button
                 type="button"
                 variant="outline-secondary"
@@ -652,26 +598,24 @@ export function AcceptHandoverModal({
             <FormField
               label={
                 pickingAnotherPerson
-                  ? "Mã PIN (4–6 số) của nhân viên nhận két"
-                  : "Mã PIN cá nhân (4–6 số) xác nhận nhận két & tự Check-in"
+                  ? "Mã PIN (4 số) của nhân viên nhận két"
+                  : "Mã PIN cá nhân (4 số) xác nhận nhận két & tự Check-in"
               }
               required
               error={fieldErrors.pin}
               help="Xác nhận xong hệ thống sẽ tự động Check-in (với Thu ngân) và mở khóa lại quầy POS."
               className="mb-0"
             >
-              <Form.Control
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="••••"
+              <PinCodeBoxes
                 value={pin}
-                onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, "").slice(0, 6));
+                onChange={(nextPin) => {
+                  setPin(nextPin);
                   setFieldErrors((f) => ({ ...f, pin: null }));
                   setApiError("");
                 }}
                 disabled={busy || isSameInitiatorCashier}
+                isInvalid={Boolean(fieldErrors.pin)}
+                ariaLabel="Mã PIN xác nhận nhận bàn giao ca 4 số"
               />
             </FormField>
           ) : null}

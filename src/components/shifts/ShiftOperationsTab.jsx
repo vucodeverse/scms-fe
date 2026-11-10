@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Col, Form, Row, Spinner } from "react-bootstrap";
+import { Button, Col, Form, InputGroup, Row, Spinner } from "react-bootstrap";
 import DataTable from "../DataTable.jsx";
 import FormField from "../FormField.jsx";
 import Icon from "../Icon.jsx";
@@ -9,7 +9,7 @@ import { useToast } from "../ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { shiftsApi } from "../../api/shiftsApi.js";
 import { POSITION_LABELS } from "../../config/userConstants.js";
-import { formatDate, formatDateTime, formatVnd } from "../../lib/format.js";
+import { formatDate, formatDateTime, formatMoneyInput, formatVnd, parseMoneyDigits } from "../../lib/format.js";
 import {
   CASH_TX_META,
   HANDOVER_STATUS_META,
@@ -18,6 +18,7 @@ import {
   actorName,
   formatHm,
   formatSignedVnd,
+  getScheduledOpenability,
   resolveShiftEmployeeRole,
   todayIso,
 } from "./shiftUtils.js";
@@ -30,8 +31,9 @@ function formatAssignedStaffSummary(empId, shift, employeeMap) {
   return isOverride ? `${name} (kiêm ${roleLabel})` : name;
 }
 
-function rankScheduledCandidate(s, currentUserId, today) {
-  const nowMs = Date.now();
+function rankScheduledCandidate(s, currentUserId, today, nowMs) {
+  const openability = getScheduledOpenability(s, nowMs);
+  const notOpenablePenalty = openability.openable ? 0 : 100;
   const isToday = s.shiftDate === today ? 0 : 10;
   const isMine = currentUserId && (s.assignedEmployeeIds || []).includes(currentUserId) ? 0 : 4;
   const startMs = s.plannedStart ? new Date(s.plannedStart).getTime() : nowMs;
@@ -41,13 +43,13 @@ function rankScheduledCandidate(s, currentUserId, today) {
       ? 0
       : 2;
   return {
-    tier: isToday + isMine + nearWindow,
+    tier: notOpenablePenalty + isToday + isMine + nearWindow,
     distance: Number.isNaN(startMs) ? Number.MAX_SAFE_INTEGER : Math.abs(startMs - nowMs),
   };
 }
 
 // Tab Kiểm két & Vận hành ca (UC24–UC27): Mở ca đối soát kết ca cũ, Nạp/Rút két (Quản lý), Theo dõi nhân sự & Đóng ca kiểm đếm.
-// Ở chế độ readOnly (COO): chỉ xem trạng thái két, nhân sự trực ca, ca chờ mở và xem chi tiết ca — không thao tác két.
+// Ở chế độ readOnly (COO): chỉ xem trạng thái két, nhân sự trực ca, ca chờ mở và xem chi tiết ca — ngoại trừ xác nhận duyệt/từ chối đóng ca sớm khi cần.
 export default function ShiftOperationsTab({
   branchId,
   userRole,
@@ -69,6 +71,8 @@ export default function ShiftOperationsTab({
   onReloadAll,
   onOpenCashModal,
   onOpenCloseModal,
+  onOpenApproveEarlyClose,
+  onOpenRejectEarlyClose,
   onOpenInitiateHandover,
   onOpenAcceptHandover,
   onOpenCancelHandover,
@@ -89,6 +93,12 @@ export default function ShiftOperationsTab({
   const [openingBusy, setOpeningBusy] = useState(false);
   const [openFieldErrors, setOpenFieldErrors] = useState({});
   const [openApiError, setOpenApiError] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     setOpeningCash("");
@@ -101,32 +111,49 @@ export default function ShiftOperationsTab({
   const orderedScheduledCandidates = useMemo(() => {
     if (!scheduledCandidates.length) return [];
     return [...scheduledCandidates].sort((a, b) => {
-      const ra = rankScheduledCandidate(a, currentUserId, today);
-      const rb = rankScheduledCandidate(b, currentUserId, today);
+      const ra = rankScheduledCandidate(a, currentUserId, today, nowMs);
+      const rb = rankScheduledCandidate(b, currentUserId, today, nowMs);
       if (ra.tier !== rb.tier) return ra.tier - rb.tier;
       return ra.distance - rb.distance;
     });
-  }, [scheduledCandidates, currentUserId, today]);
+  }, [scheduledCandidates, currentUserId, today, nowMs]);
+
+  const openableCandidates = useMemo(
+    () => orderedScheduledCandidates.filter((s) => getScheduledOpenability(s, nowMs).openable),
+    [orderedScheduledCandidates, nowMs],
+  );
 
   useEffect(() => {
     if (preselectedScheduledId) {
-      setOpenSource("scheduled");
-      setSelectedScheduledId(String(preselectedScheduledId));
+      const target = orderedScheduledCandidates.find(
+        (s) => String(s.shiftId) === String(preselectedScheduledId),
+      );
+      const targetOpenability = target ? getScheduledOpenability(target, nowMs) : null;
+      if (!target || targetOpenability?.openable) {
+        setOpenSource("scheduled");
+        setSelectedScheduledId(String(preselectedScheduledId));
+      } else {
+        setOpenSource(openableCandidates.length > 0 ? "scheduled" : "adhoc");
+        setSelectedScheduledId(
+          openableCandidates.length > 0 ? String(openableCandidates[0].shiftId) : "",
+        );
+        setOpenApiError(targetOpenability.message);
+      }
       return;
     }
-    if (orderedScheduledCandidates.length > 0) {
+    if (openableCandidates.length > 0) {
       setOpenSource((cur) => (cur === "adhoc" && !selectedScheduledId ? "scheduled" : cur));
       setSelectedScheduledId((cur) => {
-        if (cur && orderedScheduledCandidates.some((s) => String(s.shiftId) === String(cur))) {
+        if (cur && openableCandidates.some((s) => String(s.shiftId) === String(cur))) {
           return cur;
         }
-        return String(orderedScheduledCandidates[0].shiftId);
+        return String(openableCandidates[0].shiftId);
       });
     } else {
       setOpenSource("adhoc");
       setSelectedScheduledId("");
     }
-  }, [preselectedScheduledId, orderedScheduledCandidates, selectedScheduledId]);
+  }, [preselectedScheduledId, orderedScheduledCandidates, openableCandidates, selectedScheduledId, nowMs]);
 
   const activeShift = currentSummary?.shift || null;
 
@@ -173,9 +200,19 @@ export default function ShiftOperationsTab({
       setOpenFieldErrors(errs);
       return;
     }
-    if (openSource === "scheduled" && scheduledCandidates.length > 0 && !selectedScheduledId) {
-      setOpenApiError("Vui lòng chọn ca đã lên lịch hoặc chuyển sang Mở ca phát sinh.");
-      return;
+    if (openSource === "scheduled") {
+      const picked = orderedScheduledCandidates.find(
+        (s) => String(s.shiftId) === String(selectedScheduledId),
+      );
+      if (!picked) {
+        setOpenApiError("Vui lòng chọn ca đã lên lịch hợp lệ hoặc chuyển sang Mở ca phát sinh.");
+        return;
+      }
+      const pickedOpenability = getScheduledOpenability(picked, nowMs);
+      if (!pickedOpenability.openable) {
+        setOpenApiError(pickedOpenability.message);
+        return;
+      }
     }
 
     setOpeningBusy(true);
@@ -244,6 +281,15 @@ export default function ShiftOperationsTab({
     const assignedIds = activeSchedule?.assignedEmployeeIds || [];
     const txRows = currentSummary.transactions || [];
     const handoverRows = currentSummary.handovers || [];
+    const isEarlyClosePending = Boolean(activeShift.earlyClosePending);
+    const earlyRequesterName =
+      activeShift.earlyCloseRequestedByName ||
+      actorName(activeShift.earlyCloseRequestedBy, employeeMap);
+    const earlyCloseVariance =
+      activeShift.earlyCloseVariance !== null && activeShift.earlyCloseVariance !== undefined
+        ? Number(activeShift.earlyCloseVariance)
+        : null;
+    const earlyHasVariance = earlyCloseVariance !== null && Math.abs(earlyCloseVariance) >= 0.01;
     const isHandoverPending = Boolean(activeShift.handoverPending);
     const pendingHandover = activeShift.pendingHandover || null;
     const holderName =
@@ -421,6 +467,9 @@ export default function ShiftOperationsTab({
               <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
                 <span className="screen-code">CA ĐANG MỞ · #{activeShift.id}</span>
                 <StatusTag status={activeShift.status} label={statusMeta.label} variant={statusMeta.variant} />
+                {isEarlyClosePending ? (
+                  <StatusTag status="EARLY_CLOSE_PENDING" label="Chờ duyệt đóng ca sớm" variant="warn" />
+                ) : null}
                 {isHandoverPending ? (
                   <StatusTag status="PENDING_RECEIVE" label="Chờ nhận bàn giao két" variant="warn" />
                 ) : null}
@@ -457,7 +506,42 @@ export default function ShiftOperationsTab({
             </div>
 
             <div className="d-flex gap-2 flex-wrap">
-              {readOnly ? (
+              {isEarlyClosePending ? (
+                <>
+                  {userRole === "BRANCH_MANAGER" || userRole === "COO" ? (
+                    <>
+                      <Button variant="primary" onClick={() => onOpenApproveEarlyClose?.()}>
+                        <Icon name="check" size={14} /> Xác nhận đóng ca sớm &amp; Check-out
+                      </Button>
+                      <Button variant="outline-danger" onClick={() => onOpenRejectEarlyClose?.(false)}>
+                        Từ chối / Mở lại ca
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="primary" onClick={() => onReloadAll?.()}>
+                        <Spinner size="sm" className="me-2" /> Kiểm tra trạng thái ngay
+                      </Button>
+                      <Button variant="outline-secondary" onClick={() => onOpenRejectEarlyClose?.(true)}>
+                        Hủy yêu cầu đóng ca sớm
+                      </Button>
+                    </>
+                  )}
+                  {readOnly ? (
+                    <Button variant="outline-secondary" onClick={() => onViewDetail?.(activeShift.id)}>
+                      Xem chi tiết ca →
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline-secondary"
+                      disabled
+                      title="Ca đang chờ Quản lý chi nhánh xác nhận đóng ca sớm"
+                    >
+                      <Icon name="pos" size={14} /> Mở quầy POS (Chờ đóng ca)
+                    </Button>
+                  )}
+                </>
+              ) : readOnly ? (
                 <Button variant="primary" onClick={() => onViewDetail?.(activeShift.id)}>
                   Xem chi tiết ca →
                 </Button>
@@ -526,6 +610,111 @@ export default function ShiftOperationsTab({
           </div>
         </div>
 
+        {isEarlyClosePending ? (
+          <div
+            className="scms-panel panel-pad mb-3"
+            style={{ background: "var(--warn-soft)", border: "1px solid var(--accent)" }}
+          >
+            <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+              <div className="flex-grow-1">
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  {userRole === "CASHIER" ? <Spinner size="sm" /> : <strong>!</strong>}
+                  <strong style={{ fontSize: 15 }}>
+                    {userRole === "CASHIER"
+                      ? "Đang chờ Quản lý chi nhánh xác nhận đóng ca sớm"
+                      : "Yêu cầu xác nhận đóng ca sớm từ Thu ngân"}
+                  </strong>
+                </div>
+                <div className="small mb-2">
+                  {userRole === "CASHIER" ? (
+                    <>
+                      Yêu cầu đóng Ca #{activeShift.id} (kết ca dự kiến lúc{" "}
+                      <strong>{formatHm(activeShift.plannedEnd)}</strong>) đã được gửi lên{" "}
+                      <strong>Quản lý chi nhánh</strong>. Hệ thống đang tạm khóa quầy POS và tự kiểm tra trạng thái mỗi 4 giây — ngay khi Quản lý xác nhận, bạn sẽ được{" "}
+                      <strong>tự động Check-out</strong> và <strong>đăng xuất về màn hình PIN</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Thu ngân <strong>{earlyRequesterName}</strong> đã kiểm két và gửi yêu cầu đóng Ca #
+                      {activeShift.id} sớm hơn giờ kết ca dự kiến (
+                      <strong>{formatHm(activeShift.plannedEnd)}</strong>). Vui lòng xác nhận chốt ca &amp; Check-out Thu ngân hoặc từ chối để tiếp tục bán hàng.
+                    </>
+                  )}
+                </div>
+                <div
+                  className="p-2 small"
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--line)",
+                    borderRadius: "var(--radius-xs)",
+                  }}
+                >
+                  <div>
+                    <span className="text-muted-scms">Người gửi: </span>
+                    <strong>{earlyRequesterName}</strong>
+                    {activeShift.earlyCloseRequestedAt ? (
+                      <span className="text-muted-scms">
+                        {" "}· lúc {formatDateTime(activeShift.earlyCloseRequestedAt)}
+                      </span>
+                    ) : null}
+                    {" · "}
+                    <span className="text-muted-scms">Thực đếm khai báo: </span>
+                    <strong>{formatVnd(activeShift.earlyCloseCountedCash)}</strong>
+                    {earlyCloseVariance !== null ? (
+                      <>
+                        {" · "}
+                        <span className="text-muted-scms">Chênh lệch: </span>
+                        <strong>{earlyHasVariance ? formatSignedVnd(earlyCloseVariance) : "Khớp"}</strong>
+                      </>
+                    ) : null}
+                  </div>
+                  {activeShift.earlyCloseDiscrepancyReason ? (
+                    <div className="mt-1">
+                      <span className="text-muted-scms">Giải trình chênh lệch: </span>
+                      <strong>{activeShift.earlyCloseDiscrepancyReason}</strong>
+                    </div>
+                  ) : null}
+                  {activeShift.earlyCloseReason ? (
+                    <div className="mt-1">
+                      <span className="text-muted-scms">Lý do xin đóng ca sớm: </span>
+                      <strong>{activeShift.earlyCloseReason}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="d-flex flex-column gap-2">
+                {userRole === "CASHIER" ? (
+                  <>
+                    <Button size="sm" variant="primary" onClick={() => onReloadAll?.()}>
+                      Kiểm tra trạng thái ngay
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline-secondary"
+                      onClick={() => onOpenRejectEarlyClose?.(true)}
+                    >
+                      Hủy yêu cầu đóng ca sớm
+                    </Button>
+                  </>
+                ) : userRole === "BRANCH_MANAGER" || userRole === "COO" ? (
+                  <>
+                    <Button size="sm" variant="primary" onClick={() => onOpenApproveEarlyClose?.()}>
+                      <Icon name="check" size={14} /> Xác nhận đóng ca sớm &amp; Check-out Thu ngân
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline-danger"
+                      onClick={() => onOpenRejectEarlyClose?.(false)}
+                    >
+                      Từ chối / Mở lại ca
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {isHandoverPending && pendingHandover ? (
           <div className="notice notice--warn mb-3">
             <strong>!</strong>
@@ -584,7 +773,11 @@ export default function ShiftOperationsTab({
               {
                 label: "Dự kiến trong két",
                 value: formatVnd(currentSummary.currentCashBalance),
-                sub: isHandoverPending ? "Tạm khóa chờ bàn giao" : "Cần khớp khi đóng ca",
+                sub: isEarlyClosePending
+                  ? "Chờ duyệt đóng ca sớm"
+                  : isHandoverPending
+                    ? "Tạm khóa chờ bàn giao"
+                    : "Cần khớp khi đóng ca",
               },
             ]}
           />
@@ -663,11 +856,20 @@ export default function ShiftOperationsTab({
                               {emp?.phone ? ` · ${emp.phone}` : ""}
                             </div>
                           </div>
-                          <StatusTag
-                            status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
-                            variant={checkedIn ? "success" : "neutral"}
-                            label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
-                          />
+                          <div className="d-flex align-items-center gap-1">
+                            {activeSchedule?.replacementEmployeeIds?.includes(empId) ? (
+                              <StatusTag
+                                status="REPLACEMENT"
+                                variant="warn"
+                                label="Nhân sự thay thế"
+                              />
+                            ) : null}
+                            <StatusTag
+                              status={checkedIn ? "CHECKED_IN" : "INACTIVE"}
+                              variant={checkedIn ? "success" : "neutral"}
+                              label={checkedIn ? "Đang trong ca" : "Chưa check-in"}
+                            />
+                          </div>
                         </div>
                       );
                     })}
@@ -695,6 +897,10 @@ export default function ShiftOperationsTab({
               {readOnly ? (
                 <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(activeShift.id)}>
                   Chi tiết đối soát →
+                </Button>
+              ) : isEarlyClosePending ? (
+                <Button size="sm" variant="outline-secondary" disabled>
+                  POS tạm khóa chờ đóng ca
                 </Button>
               ) : isHandoverPending ? (
                 <Button size="sm" variant="outline-secondary" disabled>
@@ -982,7 +1188,9 @@ export default function ShiftOperationsTab({
             {orderedScheduledCandidates.length > 0 ? (
               <div className="d-flex flex-column gap-2 mb-2">
                 {orderedScheduledCandidates.map((s) => {
-                  const selected = openSource === "scheduled" && String(selectedScheduledId) === String(s.shiftId);
+                  const openability = getScheduledOpenability(s, nowMs);
+                  const canSelect = openability.openable;
+                  const selected = canSelect && openSource === "scheduled" && String(selectedScheduledId) === String(s.shiftId);
                   const meta = SHIFT_TYPE_META[s.shiftType] || { label: s.shiftType };
                   const isMine = currentUserId && (s.assignedEmployeeIds || []).includes(currentUserId);
                   const isToday = s.shiftDate === today;
@@ -990,23 +1198,37 @@ export default function ShiftOperationsTab({
                     <div
                       key={s.shiftId}
                       onClick={() => {
+                        if (!canSelect) {
+                          setOpenApiError(openability.message);
+                          return;
+                        }
+                        if (preselectedScheduledId && String(s.shiftId) !== String(preselectedScheduledId)) {
+                          onClearPreselectedScheduled?.();
+                        }
                         setOpenSource("scheduled");
                         setSelectedScheduledId(String(s.shiftId));
                         setOpenApiError("");
                       }}
                       role="button"
-                      tabIndex={0}
+                      tabIndex={canSelect ? 0 : -1}
+                      aria-disabled={!canSelect}
+                      title={!canSelect ? openability.message : undefined}
                       onKeyDown={(e) => {
+                        if (!canSelect) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
+                          if (preselectedScheduledId && String(s.shiftId) !== String(preselectedScheduledId)) {
+                            onClearPreselectedScheduled?.();
+                          }
                           setOpenSource("scheduled");
                           setSelectedScheduledId(String(s.shiftId));
                         }
                       }}
                       className="p-3"
                       style={{
-                        cursor: "pointer",
-                        background: selected ? "var(--accent-soft)" : "var(--surface)",
+                        cursor: canSelect ? "pointer" : "not-allowed",
+                        opacity: canSelect ? 1 : 0.72,
+                        background: selected ? "var(--accent-soft)" : canSelect ? "var(--surface)" : "var(--paper)",
                         border: selected ? "1px solid var(--accent)" : "1px solid var(--line)",
                         borderRadius: "var(--radius-sm)",
                       }}
@@ -1016,8 +1238,13 @@ export default function ShiftOperationsTab({
                           <Form.Check
                             type="radio"
                             name="openShiftMode"
+                            disabled={!canSelect}
                             checked={selected}
                             onChange={() => {
+                              if (!canSelect) return;
+                              if (preselectedScheduledId && String(s.shiftId) !== String(preselectedScheduledId)) {
+                                onClearPreselectedScheduled?.();
+                              }
                               setOpenSource("scheduled");
                               setSelectedScheduledId(String(s.shiftId));
                             }}
@@ -1032,14 +1259,22 @@ export default function ShiftOperationsTab({
                         <div className="d-flex align-items-center gap-1 flex-wrap">
                           {isToday ? <StatusTag status="TODAY" label="Hôm nay" variant="dark" /> : null}
                           {isMine ? <StatusTag status="MINE" label="Ca của bạn" variant="success" /> : null}
-                          <StatusTag status="SCHEDULED" label="Đã lên lịch" variant="neutral" />
+                          {canSelect ? (
+                            <StatusTag status="SCHEDULED" label="Đã lên lịch" variant="neutral" />
+                          ) : (
+                            <StatusTag
+                              status={openability.reason || "LOCKED"}
+                              label={openability.label}
+                              variant={openability.reason === "TOO_EARLY" ? "neutral" : "warn"}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="small text-muted-scms mt-1 ms-4">
                         {hideStaffSchedule ? (
                           isMine
                             ? "Ca được phân công cho bạn · Chọn để kiểm két & mở ca"
-                            : "Ca đã lên lịch sẵn sàng mở tại quầy"
+                            : "Ca đã lên lịch tại quầy"
                         ) : s.assignedEmployeeIds?.length ? (
                           <>
                             Nhân sự gán ca:{" "}
@@ -1053,6 +1288,11 @@ export default function ShiftOperationsTab({
                           "Chưa gán nhân viên vào lịch ca này"
                         )}
                       </div>
+                      {!canSelect && openability.message ? (
+                        <div className="small mt-1 ms-4" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                          {openability.message}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -1065,6 +1305,7 @@ export default function ShiftOperationsTab({
 
             <div
               onClick={() => {
+                if (preselectedScheduledId) onClearPreselectedScheduled?.();
                 setOpenSource("adhoc");
                 setOpenApiError("");
               }}
@@ -1073,6 +1314,7 @@ export default function ShiftOperationsTab({
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
+                  if (preselectedScheduledId) onClearPreselectedScheduled?.();
                   setOpenSource("adhoc");
                 }
               }}
@@ -1089,7 +1331,10 @@ export default function ShiftOperationsTab({
                   type="radio"
                   name="openShiftMode"
                   checked={openSource === "adhoc"}
-                  onChange={() => setOpenSource("adhoc")}
+                  onChange={() => {
+                    if (preselectedScheduledId) onClearPreselectedScheduled?.();
+                    setOpenSource("adhoc");
+                  }}
                 />
                 <strong>Mở ca phát sinh (tạo ca mới theo giờ hiện tại)</strong>
               </div>
@@ -1106,19 +1351,21 @@ export default function ShiftOperationsTab({
               error={openFieldErrors.openingCash}
               help="Nhập đúng số tiền thực đếm hiện có trong két khi nhận ca."
             >
-              <Form.Control
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Nhập số tiền thực đếm trong két…"
-                value={openingCash}
-                onChange={(e) => {
-                  setOpeningCash(e.target.value);
-                  setOpenFieldErrors((f) => ({ ...f, openingCash: null, note: null }));
-                  setOpenApiError("");
-                }}
-                disabled={openingBusy}
-              />
+              <InputGroup>
+                <Form.Control
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Nhập số tiền thực đếm trong két…"
+                  value={formatMoneyInput(openingCash)}
+                  onChange={(e) => {
+                    setOpeningCash(parseMoneyDigits(e.target.value));
+                    setOpenFieldErrors((f) => ({ ...f, openingCash: null, note: null }));
+                    setOpenApiError("");
+                  }}
+                  disabled={openingBusy}
+                />
+                <InputGroup.Text>VNĐ</InputGroup.Text>
+              </InputGroup>
               <div className="d-flex gap-1 flex-wrap mt-2">
                 {OPENING_PRESETS.map((val) => (
                   <Button

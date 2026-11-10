@@ -9,6 +9,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { branchesApi } from "../api/branchesApi.js";
 import { usersApi } from "../api/usersApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { formatDateTime } from "../lib/format.js";
 import { BRANCH_STATUS_LABELS } from "../config/userConstants.js";
 
@@ -48,11 +49,13 @@ export default function BranchDetailPage() {
       const detail = await branchesApi.detail(branchId);
       setBranch(detail);
       const [assignedRes, unassignedRes] = await Promise.allSettled([
-        usersApi.list({ uiPage: 1, size: 50, role: "BRANCH_MANAGER", branchId }),
-        usersApi.list({ uiPage: 1, size: 100, role: "BRANCH_MANAGER", status: "ACTIVE", unassigned: true }),
+        fetchAllPages((p) => usersApi.list({ ...p, role: "BRANCH_MANAGER", branchId })),
+        fetchAllPages((p) =>
+          usersApi.list({ ...p, role: "BRANCH_MANAGER", status: "ACTIVE", unassigned: true }),
+        ),
       ]);
-      if (assignedRes.status === "fulfilled") setAssignedManagers(assignedRes.value.items || []);
-      if (unassignedRes.status === "fulfilled") setUnassignedManagers(unassignedRes.value.items || []);
+      if (assignedRes.status === "fulfilled") setAssignedManagers(assignedRes.value || []);
+      if (unassignedRes.status === "fulfilled") setUnassignedManagers(unassignedRes.value || []);
     } catch (err) {
       if (err.status === 404) setNotFound(true);
       else toastRef.current.error(err.message || "Không tải được dữ liệu chi nhánh.");

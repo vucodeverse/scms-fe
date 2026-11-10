@@ -28,3 +28,16 @@ export function normalizePage(pageResponse) {
     totalPages: pageResponse.totalPages ?? 0,
   };
 }
+
+// Tải toàn bộ trang từ một hàm list({ uiPage, size, ... }) trả về normalizePage.
+export async function fetchAllPages(fetcher, params = {}) {
+  const pageSize = 100;
+  const first = await fetcher({ ...params, uiPage: 1, size: pageSize });
+  const items = [...(first?.items || [])];
+  const totalPages = Math.max(1, first?.totalPages ?? 1);
+  for (let p = 2; p <= totalPages; p += 1) {
+    const next = await fetcher({ ...params, uiPage: p, size: pageSize });
+    items.push(...(next?.items || []));
+  }
+  return items;
+}

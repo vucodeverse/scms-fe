@@ -16,6 +16,7 @@ import { formatNumber, formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { attendanceApi } from "../api/attendanceApi.js";
 import { shiftsApi } from "../api/shiftsApi.js";
@@ -43,7 +44,7 @@ export default function PosPage() {
   const { user, status } = useAuth();
   const { navigate } = useRouter();
   const toast = useToast();
-  // Sidebar POS khóa mục Gọi món khi chưa mở khóa Thu ngân hoặc chưa mở ca
+  // Sidebar POS khóa mục Gọi món khi chưa mở khóa Thu ngân, chưa mở ca, chờ bàn giao hoặc chờ đóng ca sớm
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -90,6 +91,7 @@ export default function PosPage() {
     unlocked: status === "authenticated" && Boolean(user),
     shiftOpen: Boolean(shiftBanner?.open),
     handoverPending: Boolean(shiftBanner?.handoverPending),
+    earlyClosePending: Boolean(shiftBanner?.earlyClosePending),
   });
 
   useEffect(() => {
@@ -129,14 +131,16 @@ export default function PosPage() {
         shift: sum.shift,
         cashBalance: sum.currentCashBalance,
         handoverPending: Boolean(sum.shift?.handoverPending),
+        earlyClosePending: Boolean(sum.shift?.earlyClosePending),
       });
     } catch (err) {
       if (err?.detailCode === "SHIFT_NOT_OPEN") {
-        setShiftBanner({ open: false, handoverPending: false });
+        setShiftBanner({ open: false, handoverPending: false, earlyClosePending: false });
       } else {
         setShiftBanner({
           open: false,
           handoverPending: false,
+          earlyClosePending: false,
           error: err?.message || "Không kiểm tra được trạng thái ca bán hàng.",
         });
       }
@@ -157,27 +161,36 @@ export default function PosPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [status, user, effectiveBranchId, checkShiftStatus]);
 
-  // Thu ngân không được vào thẳng Gọi món POS nếu chưa mở ca hoặc đang chờ bàn giao két -> đưa về Ca & két tiền
+  // Thu ngân không được vào thẳng Gọi món POS nếu chưa mở ca, đang chờ bàn giao két hoặc chờ duyệt đóng ca sớm -> đưa về Ca & két tiền
   useEffect(() => {
     if (
       status === "authenticated" &&
-      user?.role === "CASHIER" &&
+      user?.role &&
+      user.role !== "COO" &&
+      user.role !== "BRANCH_MANAGER" &&
       !checkingShift &&
       shiftBanner &&
-      (!shiftBanner.open || shiftBanner.handoverPending)
+      (!shiftBanner.open || shiftBanner.handoverPending || shiftBanner.earlyClosePending)
     ) {
       if (!redirectedRef.current) {
         redirectedRef.current = true;
         toastRef.current.warning(
-          shiftBanner.handoverPending
-            ? "Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca — vui lòng kiểm két nhận ca tại Ca & két tiền."
-            : shiftBanner.error
-              ? `${shiftBanner.error} Đang chuyển về màn Ca & két tiền.`
-              : "Chi nhánh chưa mở ca — vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)."
+          shiftBanner.earlyClosePending
+            ? "Ca đang chờ Quản lý xác nhận đóng ca sớm — vui lòng theo dõi hoặc hủy yêu cầu tại Ca & két tiền."
+            : shiftBanner.handoverPending
+              ? "Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca — vui lòng kiểm két nhận ca tại Ca & két tiền."
+              : shiftBanner.error
+                ? `${shiftBanner.error} Đang chuyển về màn Ca & két tiền.`
+                : "Chi nhánh chưa mở ca — vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)."
         );
       }
       navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`);
-    } else if (status === "authenticated" && shiftBanner?.open && !shiftBanner?.handoverPending) {
+    } else if (
+      status === "authenticated" &&
+      shiftBanner?.open &&
+      !shiftBanner?.handoverPending &&
+      !shiftBanner?.earlyClosePending
+    ) {
       redirectedRef.current = false;
     }
   }, [status, user?.role, checkingShift, shiftBanner, effectiveBranchId, navigate]);
@@ -214,15 +227,17 @@ export default function PosPage() {
     if (status !== "authenticated" || !user) return;
     setLoading(true);
     try {
-      const [prodPage, cats] = await Promise.all([
-        productsApi.list({ uiPage: 1, size: 100, status: "AVAILABLE" }),
+      const [prodItems, cats] = await Promise.all([
+        fetchAllPages((p) => productsApi.list({ ...p, status: "AVAILABLE" })),
         categoriesApi.listAll(),
       ]);
-      setProducts(prodPage.items || []);
-      setCategories((cats || []).filter((c) => c.status === "ACTIVE"));
+      const activeCats = (cats || []).filter((c) => c.status === "ACTIVE");
+      const activeCatIds = new Set(activeCats.map((c) => c.id));
+      setProducts(prodItems.filter((p) => p.categoryId == null || activeCatIds.has(p.categoryId)));
+      setCategories(activeCats);
       if (!user?.branchId) {
-        const brPage = await branchesApi.list({ uiPage: 1, size: 100 });
-        const open = (brPage.items || []).filter((b) => b.status === "OPEN");
+        const brItems = await fetchAllPages((p) => branchesApi.list(p));
+        const open = brItems.filter((b) => b.status === "OPEN");
         setBranches(open);
         if (open.length) {
           setBranchId((cur) => {
@@ -251,31 +266,36 @@ export default function PosPage() {
     if (!bId) return;
     setLoadingAttEmployees(true);
 
-
-
-
     if (!preserveMessage) {
       setAttMessage(null);
-  
     }
 
-
-
     try {
-      const raw = await attendanceApi.kioskEmployees(bId);
-      const list = [...(Array.isArray(raw) ? raw : [])].sort((a, b) => {
-        const aOk = Boolean(a.hasAssignedShift);
-        const bOk = Boolean(b.hasAssignedShift);
-        if (aOk !== bOk) return aOk ? -1 : 1;
-        return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+      const shiftId = shiftBanner?.shift?.id;
+      const raw = await attendanceApi.kioskEmployees(bId, {
+        shiftId: shiftId || undefined,
+        onlyAssigned: true,
+        excludeCashier: true,
       });
+      const activeCashierId = shiftBanner?.shift?.activeCashierId;
+      const list = [...(Array.isArray(raw) ? raw : [])]
+        .filter((e) => {
+          if (!e.hasAssignedShift) return false;
+          const roleUpper = (e.role || "").toUpperCase();
+          if (roleUpper === "CASHIER" || roleUpper === "THU NGÂN") return false;
+          if (activeCashierId && Number(e.employeeId) === Number(activeCashierId)) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          return (a.fullName || "").localeCompare(b.fullName || "", "vi");
+        });
+
       setAttEmployees(list);
       if (list.length > 0) {
-        const preferred = list.find((e) => e.hasAssignedShift) || list[0];
         setSelectedEmpId((cur) =>
           list.some((e) => String(e.employeeId) === String(cur))
             ? cur
-            : String(preferred.employeeId),
+            : String(list[0].employeeId),
         );
       } else {
         setSelectedEmpId("");
@@ -285,14 +305,13 @@ export default function PosPage() {
     } finally {
       setLoadingAttEmployees(false);
     }
-  }, []);
+  }, [shiftBanner?.shift?.id, shiftBanner?.shift?.activeCashierId]);
 
   useEffect(() => {
     if (showAttendanceModal) {
       loadAttendanceEmployees(effectiveBranchId || 1);
       setAttMessage(null);
       setAttPin("");
-  
     }
   }, [showAttendanceModal, effectiveBranchId, loadAttendanceEmployees]);
 
@@ -470,6 +489,10 @@ export default function PosPage() {
       toast.error("Chưa mở ca bán hàng. Vui lòng kiểm két & mở ca trước khi tạo đơn.");
       return;
     }
+    if (shiftBanner?.earlyClosePending) {
+      toast.error("Ca đang chờ Quản lý xác nhận đóng ca sớm. Vui lòng chờ duyệt hoặc hủy yêu cầu tại Ca & két tiền.");
+      return;
+    }
     if (shiftBanner?.handoverPending) {
       toast.error("Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca. Vui lòng kiểm két nhận ca trước khi tạo đơn.");
       return;
@@ -479,6 +502,7 @@ export default function PosPage() {
     try {
       const payload = {
         branchId: effectiveBranchId,
+        shiftId: shiftBanner?.shift?.id || null,
         totalAmount: subtotal,
         discountAmount: 0,
         finalAmount: subtotal,
@@ -500,7 +524,11 @@ export default function PosPage() {
       toast.success(`Đã tạo đơn ${detail.receiptNo || "#" + detail.id}.`);
     } catch (err) {
       toast.error(err.message || "Không tạo được đơn hàng.");
-      if (err?.detailCode === "SHIFT_NOT_OPEN" || err?.detailCode === "SHIFT_HANDOVER_PENDING") {
+      if (
+        err?.detailCode === "SHIFT_NOT_OPEN" ||
+        err?.detailCode === "SHIFT_HANDOVER_PENDING" ||
+        err?.detailCode === "SHIFT_EARLY_CLOSE_PENDING"
+      ) {
         checkShiftStatus(effectiveBranchId);
       }
     } finally {
@@ -552,7 +580,12 @@ export default function PosPage() {
               variant="outline-secondary"
               className="d-flex align-items-center gap-1"
               onClick={() => openRecipeModal(visibleProducts[0] || products[0])}
-              disabled={products.length === 0 || !shiftBanner?.open || Boolean(shiftBanner?.handoverPending)}
+              disabled={
+                products.length === 0 ||
+                !shiftBanner?.open ||
+                Boolean(shiftBanner?.handoverPending) ||
+                Boolean(shiftBanner?.earlyClosePending)
+              }
             >
               <Icon name="book" size={15} /> Công thức pha chế
             </Button>
@@ -602,6 +635,45 @@ export default function PosPage() {
               onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
             >
               Kiểm két &amp; Mở ca →
+            </Button>
+            {effectiveBranchId ? (
+              <Button
+                variant="outline-secondary"
+                onClick={() => checkShiftStatus(effectiveBranchId)}
+              >
+                Kiểm tra lại trạng thái ca
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : shiftBanner?.earlyClosePending ? (
+        <div className="scms-panel panel-pad text-center mx-auto my-4" style={{ maxWidth: 660 }}>
+          <div className="notice notice--warn mb-3 text-start">
+            <strong>!</strong>
+            <span>
+              <strong>Ca làm việc đang chờ Quản lý xác nhận đóng ca sớm</strong> (Ca #{shiftBanner.shift?.id} vẫn{" "}
+              <strong>ĐANG MỞ</strong>).{" "}
+              {shiftBanner.shift?.earlyCloseRequestedByName ? (
+                <>
+                  Thu ngân <strong>{shiftBanner.shift.earlyCloseRequestedByName}</strong> đã gửi yêu cầu đóng ca sớm
+                  {shiftBanner.shift.earlyCloseCountedCash !== null && shiftBanner.shift.earlyCloseCountedCash !== undefined
+                    ? ` · Thực đếm: ${formatVnd(shiftBanner.shift.earlyCloseCountedCash)}`
+                    : ""}
+                  {shiftBanner.shift.earlyCloseReason ? ` · Lý do: ${shiftBanner.shift.earlyCloseReason}` : ""}.
+                </>
+              ) : null}
+            </span>
+          </div>
+          <h2 className="mb-2">Quầy POS đang tạm khóa chờ duyệt đóng ca sớm</h2>
+          <p className="text-muted-scms mb-4">
+            Quầy bán hàng tạm ngừng tạo đơn và thu tiền cho đến khi Quản lý xác nhận đóng ca &amp; Check-out Thu ngân hoặc từ chối / hủy yêu cầu tại màn Ca &amp; két tiền.
+          </p>
+          <div className="d-flex justify-content-center gap-2 flex-wrap">
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
+            >
+              Mở Ca &amp; két tiền để xác nhận →
             </Button>
             {effectiveBranchId ? (
               <Button
@@ -670,7 +742,7 @@ export default function PosPage() {
               Kiểm két &amp; Đóng ca →
             </Button>
           </div>
-          <div className="grid-2" style={{ gridTemplateColumns: "1fr 400px", alignItems: "start" }}>
+          <div className="pos-split-grid">
           {/* Menu món */}
           <div>
             <div className="d-flex gap-2 flex-wrap mb-3 align-items-center">
@@ -797,12 +869,12 @@ export default function PosPage() {
                             <strong>{l.name}</strong>
                             <strong>{formatVnd(lineTotal)}</strong>
                           </div>
-                          <div className="d-flex gap-2 mt-1 flex-wrap">
+                          <div className="pos-cart-selects">
                             <Form.Select
                               size="sm"
                               value={l.size}
+                              aria-label={`Chọn size cho ${l.name}`}
                               onChange={(e) => updateLine(l.key, { size: e.target.value })}
-                              style={{ width: 76 }}
                             >
                               {(l.product.sizes || []).map((s) => (
                                 <option key={s.size} value={s.size}>
@@ -813,8 +885,8 @@ export default function PosPage() {
                             <Form.Select
                               size="sm"
                               value={l.sugarLevel}
+                              aria-label={`Chọn mức đường cho ${l.name}`}
                               onChange={(e) => updateLine(l.key, { sugarLevel: e.target.value })}
-                              style={{ width: 108 }}
                             >
                               {LEVELS.map((v) => (
                                 <option key={v} value={v}>
@@ -825,8 +897,8 @@ export default function PosPage() {
                             <Form.Select
                               size="sm"
                               value={l.iceLevel}
+                              aria-label={`Chọn mức đá cho ${l.name}`}
                               onChange={(e) => updateLine(l.key, { iceLevel: e.target.value })}
-                              style={{ width: 96 }}
                             >
                               {LEVELS.map((v) => (
                                 <option key={v} value={v}>
@@ -834,20 +906,27 @@ export default function PosPage() {
                                 </option>
                               ))}
                             </Form.Select>
+                          </div>
+                          <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
+                            <span className="small text-muted-scms">Số lượng</span>
                             <div className="d-flex align-items-center gap-1">
                               <Button
                                 size="sm"
                                 variant="outline-secondary"
+                                aria-label={`Giảm số lượng ${l.name}`}
                                 onClick={() =>
                                   updateLine(l.key, { quantity: Math.max(1, l.quantity - 1) })
                                 }
                               >
                                 −
                               </Button>
-                              <span style={{ minWidth: 22, textAlign: "center" }}>{l.quantity}</span>
+                              <span style={{ minWidth: 26, textAlign: "center", fontWeight: 600 }}>
+                                {l.quantity}
+                              </span>
                               <Button
                                 size="sm"
                                 variant="outline-secondary"
+                                aria-label={`Tăng số lượng ${l.name}`}
                                 onClick={() => updateLine(l.key, { quantity: l.quantity + 1 })}
                               >
                                 +
@@ -974,18 +1053,25 @@ export default function PosPage() {
 
             {loadingAttEmployees ? (
               <div className="text-center py-4">
-                <Spinner size="sm" className="me-2" /> Đang tải nhân sự chi nhánh…
+                <Spinner size="sm" className="me-2" /> Đang tải nhân sự ca làm việc…
+              </div>
+            ) : attEmployees.length === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-muted mb-2" style={{ fontSize: 32 }}>👥</div>
+                <div className="fw-semibold mb-1">Không có nhân viên cần chấm công trong ca này</div>
+                <div className="text-muted-scms small px-3">
+                  Thu ngân đã được ghi nhận chấm công tự động khi mở ca. Ca làm việc hiện tại không có nhân viên khác (pha chế, phục vụ...) được xếp ca.
+                </div>
               </div>
             ) : (
               <>
-                <FormField label="Chọn nhân viên" required className="mb-3">
+                <FormField label="Chọn nhân viên trong ca" required className="mb-3">
                   <Form.Select
                     value={selectedEmpId}
                     onChange={(e) => {
                       setSelectedEmpId(e.target.value);
                       setAttMessage(null);
                       setAttPin("");
-                  
                     }}
                     disabled={attBusy}
                   >
@@ -1093,7 +1179,7 @@ export default function PosPage() {
               >
                 Đóng
               </Button>
-              {(() => {
+              {attEmployees.length > 0 && (() => {
                 const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
                 const isOut = emp?.isCheckedIn;
                 return (
@@ -1235,7 +1321,7 @@ export default function PosPage() {
                   </div>
 
                   <div className="p-3 bg-light rounded border">
-                    <h6 className="fw-bold mb-2">📋 Quy trình pha chế chuẩn F&B:</h6>
+                    <h6 className="fw-bold mb-2">📋 Quy trình pha chế chuẩn F&amp;B:</h6>
                     <ol className="mb-0 ps-3 text-secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
                       <li>Đong chính xác định lượng nguyên liệu theo bảng trên vào ca/ly lường.</li>
                       <li>Khuấy đều hoặc sục sữa/đánh bọt (nếu là món nóng/matcha/latte) đạt nhiệt độ 65-70°C.</li>

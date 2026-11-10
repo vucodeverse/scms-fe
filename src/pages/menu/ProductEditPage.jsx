@@ -59,15 +59,10 @@ export default function ProductEditPage() {
       setCategories(categoryList || []);
       setAllToppings(toppingList || []);
       if (editingId) {
-        // DTO chi tiết có thể lỗi 500 trên DB sạch (bảng recipe) nên
-        // lấy sản phẩm từ danh sách + giá từ endpoint sizes như FE-09.
-        const page = await productsApi.list({ uiPage: 1, size: 100 });
-        const row = (page.items || []).find((p) => p.id === editingId);
-        if (!row) {
-          setNotFound(true);
-          return;
-        }
-        const sizes = await productsApi.listSizes(editingId).catch(() => row.sizes || []);
+        const detail = await productsApi.detail(editingId);
+        const sizes = detail.sizes?.length
+          ? detail.sizes
+          : await productsApi.listSizes(editingId).catch(() => []);
         const prices = { S: "", M: "", L: "" };
         const originals = {};
         for (const s of sizes || []) {
@@ -75,7 +70,7 @@ export default function ProductEditPage() {
           originals[s.size] = Number(s.price);
         }
         const applied = {};
-        for (const t of row.toppings || []) {
+        for (const t of detail.toppings || []) {
           applied[t.toppingId] = {
             extraPrice: String(Number(t.extraPrice)),
             isDefault: !!t.isDefault,
@@ -83,20 +78,22 @@ export default function ProductEditPage() {
         }
         setOriginalSizes(originals);
         setForm({
-          name: row.name || "",
-          categoryId: row.categoryId ? String(row.categoryId) : "",
-          description: row.description || "",
-          imageUrl: row.imageUrl || "",
-          defaultSize: row.defaultSize || "S",
-          status: row.status || "AVAILABLE",
+          name: detail.name || "",
+          categoryId: detail.categoryId ? String(detail.categoryId) : "",
+          description: detail.description || "",
+          imageUrl: detail.imageUrl || "",
+          defaultSize: detail.defaultSize || "S",
+          status: detail.status || "AVAILABLE",
           prices,
           toppings: applied,
         });
       } else {
-        setForm((f) => ({ ...f, categoryId: categoryList?.[0]?.id ? String(categoryList[0].id) : "" }));
+        const firstActiveCat = (categoryList || []).find((c) => c.status === "ACTIVE") || categoryList?.[0];
+        setForm((f) => ({ ...f, categoryId: firstActiveCat?.id ? String(firstActiveCat.id) : "" }));
       }
     } catch (err) {
-      toastRef.current.error(err.message || "Không tải được dữ liệu sản phẩm.");
+      if (editingId && err.status === 404) setNotFound(true);
+      else toastRef.current.error(err.message || "Không tải được dữ liệu sản phẩm.");
     } finally {
       setLoading(false);
     }
@@ -199,6 +196,10 @@ export default function ProductEditPage() {
   }
 
   const fe = (name) => formError?.fieldError?.(name) || null;
+  const visibleCategories = categories.filter(
+    (c) => c.status === "ACTIVE" || String(c.id) === String(form.categoryId),
+  );
+  const visibleToppings = allToppings.filter((t) => t.status === "ACTIVE" || Boolean(form.toppings[t.id]));
   const selectedToppings = allToppings.filter((t) => form.toppings[t.id]);
 
   if (notFound) {
@@ -271,9 +272,10 @@ export default function ProductEditPage() {
                   onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
                 >
                   <option value="">— Chọn danh mục —</option>
-                  {categories.map((c) => (
+                  {visibleCategories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {c.status !== "ACTIVE" ? " (Ngừng hoạt động)" : ""}
                     </option>
                   ))}
                 </Form.Select>
@@ -342,15 +344,15 @@ export default function ProductEditPage() {
 
             <FormField label="Topping áp dụng" className="mb-3">
               <div className="check-row">
-                {allToppings.length === 0 ? (
-                  <span className="text-muted">Chưa có topping.</span>
+                {visibleToppings.length === 0 ? (
+                  <span className="text-muted">Chưa có topping khả dụng.</span>
                 ) : (
-                  allToppings.map((t) => (
+                  visibleToppings.map((t) => (
                     <Form.Check
                       key={t.id}
                       type="checkbox"
                       id={`product-topping-${t.id}`}
-                      label={t.name}
+                      label={`${t.name}${t.status !== "ACTIVE" ? " (Ngừng hoạt động)" : ""}`}
                       checked={!!form.toppings[t.id]}
                       onChange={(e) => toggleTopping(t, e.target.checked)}
                     />

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Form, Modal, Spinner, Table } from "react-bootstrap";
+import { Button, Form, Modal, Spinner, Table } from "react-bootstrap";
 import StatusTag from "../../components/StatusTag.jsx";
 import Icon from "../../components/Icon.jsx";
 import { useToast } from "../../components/ToastContext.jsx";
 import { productsApi } from "../../api/productsApi.js";
 import { ingredientsApi } from "../../api/ingredientsApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 import { formatNumber, formatVnd } from "../../lib/format.js";
 
 const SIZES = ["S", "M", "L"];
@@ -34,12 +35,16 @@ export default function RecipeTab() {
 
   // Tải danh mục sản phẩm và nguyên liệu
   useEffect(() => {
-    productsApi
-      .list({ uiPage: 1, size: 100 })
-      .then((page) => {
-        const items = page.items || [];
+    fetchAllPages((p) => productsApi.list(p))
+      .then((items) => {
         setProducts(items);
-        if (items.length) setProductId(String(items[0].id));
+        if (items.length) {
+          const first = items[0];
+          setProductId(String(first.id));
+          if (first.defaultSize && SIZES.includes(first.defaultSize)) {
+            setSize(first.defaultSize);
+          }
+        }
       })
       .catch((err) => toastRef.current.error(err.message || "Không tải được danh sách sản phẩm."))
       .finally(() => setLoadingProducts(false));
@@ -75,6 +80,24 @@ export default function RecipeTab() {
   }, [loadRecipe]);
 
   const product = products.find((p) => String(p.id) === String(productId)) || null;
+  const availableSizes = useMemo(() => {
+    const configured = (product?.sizes || [])
+      .map((s) => s.size)
+      .filter((s) => SIZES.includes(s))
+      .sort((a, b) => SIZES.indexOf(a) - SIZES.indexOf(b));
+    return configured.length > 0 ? configured : SIZES;
+  }, [product]);
+
+  useEffect(() => {
+    if (availableSizes.length > 0 && !availableSizes.includes(size)) {
+      const preferred =
+        product?.defaultSize && availableSizes.includes(product.defaultSize)
+          ? product.defaultSize
+          : availableSizes[0];
+      setSize(preferred);
+    }
+  }, [availableSizes, size, product?.defaultSize]);
+
   const priceForSize = product?.sizes?.find((s) => s.size === size)?.price;
   const lines = recipeData?.items || [];
   const estimatedCogs = recipeData?.estimatedCogs || 0;
@@ -87,12 +110,21 @@ export default function RecipeTab() {
       : null;
 
   // Mở modal tạo / chỉnh sửa công thức
-  const openEditModal = (scope = "COMMON") => {
+  const openEditModal = async (scope = "COMMON") => {
     setEditScope(scope);
 
     // Lọc các dòng đang áp dụng cho scope tương ứng nếu có
     const targetScopeSize = scope === "COMMON" ? null : scope;
-    const existing = lines
+    let sourceLines = lines;
+    if (targetScopeSize && targetScopeSize !== size && productId) {
+      try {
+        const fetched = await productsApi.recipe(Number(productId), targetScopeSize);
+        sourceLines = fetched?.items || [];
+      } catch {
+        sourceLines = [];
+      }
+    }
+    const existing = sourceLines
       .filter((l) => (targetScopeSize === null ? !l.size : l.size === targetScopeSize))
       .map((l) => ({
         ingredientId: l.ingredientId,
@@ -229,7 +261,7 @@ export default function RecipeTab() {
           <div className="field" style={{ minWidth: 120 }}>
             <Form.Label>Size xem</Form.Label>
             <Form.Select value={size} onChange={(e) => setSize(e.target.value)}>
-              {SIZES.map((s) => (
+              {availableSizes.map((s) => (
                 <option key={s} value={s}>
                   Size {s}
                 </option>
@@ -470,7 +502,7 @@ export default function RecipeTab() {
               >
                 Chung cho mọi size
               </Button>
-              {SIZES.map((s) => (
+              {availableSizes.map((s) => (
                 <Button
                   key={s}
                   size="sm"

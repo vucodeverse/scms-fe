@@ -126,11 +126,11 @@ export default function SecurityAlertBell() {
       <button
         type="button"
         className={`alert-bell-btn${badgeCount > 0 ? " has-alerts" : ""}`}
-        aria-label="Cảnh báo bảo mật PIN"
+        aria-label="Thông báo vận hành & bảo mật"
         title={
           badgeCount > 0
-            ? `${badgeCount} cảnh báo bảo mật PIN cần chú ý`
-            : "Cảnh báo bảo mật PIN"
+            ? `${badgeCount} thông báo cần Quản lý xử lý`
+            : "Thông báo vận hành & bảo mật"
         }
         onClick={() => {
           const next = !open;
@@ -143,14 +143,14 @@ export default function SecurityAlertBell() {
       </button>
 
       {open ? (
-        <div className="alert-popover" role="dialog" aria-label="Cảnh báo bảo mật PIN">
+        <div className="alert-popover" role="dialog" aria-label="Thông báo vận hành & bảo mật">
           <div className="alert-popover__head">
             <div>
-              <strong>Cảnh báo bảo mật PIN</strong>
+              <strong>Thông báo vận hành &amp; PIN</strong>
               <div className="text-muted-scms" style={{ fontSize: 11 }}>
-                {summary.currentlyLockedCount > 0
-                  ? `${summary.currentlyLockedCount} PIN đang tạm khóa`
-                  : "Theo dõi sai PIN quá 3 lần tại Kiosk"}
+                {summary.currentlyLockedCount > 0 || summary.activeCount > 0
+                  ? `${summary.activeCount} cần xử lý${summary.currentlyLockedCount > 0 ? ` · ${summary.currentlyLockedCount} PIN đang khóa` : ""}`
+                  : "Theo dõi khóa PIN Kiosk & duyệt đóng ca sớm"}
               </div>
             </div>
             <div className="d-flex gap-1 align-items-center">
@@ -163,26 +163,38 @@ export default function SecurityAlertBell() {
           <div className="alert-popover__body">
             {summary.items.length === 0 ? (
               <div className="p-3 text-center text-muted-scms small">
-                Chưa có cảnh báo khóa PIN nào gần đây.
+                Chưa có thông báo vận hành hay cảnh báo PIN nào gần đây.
               </div>
             ) : (
               summary.items.map((item) => {
-                const remaining = item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
-                const isStillLocked = Boolean(item.currentlyLocked && remaining);
+                const isEarlyClose = item.alertType === "EARLY_SHIFT_CLOSE_REQUEST";
+                const remaining = !isEarlyClose && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
+                const isStillLocked = Boolean(!isEarlyClose && item.currentlyLocked && remaining);
                 const roleText = item.targetRole ? POSITION_LABELS[item.targetRole] || item.targetRole : null;
+                const canReviewEarlyClose = isEarlyClose && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
                 return (
                   <div
                     key={item.id}
-                    className={`alert-popover__item${item.status === "ACTIVE" || isStillLocked ? " is-active" : ""}`}
+                    className={`alert-popover__item${item.status === "ACTIVE" || isStillLocked || canReviewEarlyClose ? " is-active" : ""}`}
                   >
                     <div className="d-flex justify-content-between align-items-start gap-2 mb-1">
                       <div style={{ fontWeight: 600, fontSize: 12.5, lineHeight: 1.35 }}>
-                        {item.targetUserName || `Kiosk ${item.branchName}`}
-                        {roleText ? (
+                        {isEarlyClose
+                          ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
+                          : item.targetUserName || `Kiosk ${item.branchName}`}
+                        {!isEarlyClose && roleText ? (
                           <span className="text-muted-scms fw-normal"> · {roleText}</span>
                         ) : null}
                       </div>
-                      {isStillLocked ? (
+                      {isEarlyClose ? (
+                        item.status === "APPROVED" ? (
+                          <StatusTag status="APPROVED" variant="success" label="Đã duyệt đóng ca" />
+                        ) : item.status === "REJECTED" ? (
+                          <StatusTag status="REJECTED" variant="neutral" label="Đã từ chối" />
+                        ) : (
+                          <StatusTag status="EARLY_CLOSE_PENDING" variant="warn" label="Chờ duyệt đóng ca sớm" />
+                        )
+                      ) : isStillLocked ? (
                         <StatusTag status="PIN_LOCKED" variant="warn" label={`Đang khóa · ${remaining}`} />
                       ) : item.status === "UNLOCKED" ? (
                         <StatusTag status="UNLOCKED" variant="success" label="Đã mở khóa" />
@@ -201,11 +213,36 @@ export default function SecurityAlertBell() {
                       {item.resolvedAt && item.resolvedByName ? (
                         <div className="mt-1">
                           Xử lý bởi <strong>{item.resolvedByName}</strong> ({formatDateTime(item.resolvedAt)})
+                          {item.resolveNote ? ` — "${item.resolveNote}"` : ""}
                         </div>
                       ) : null}
                     </div>
 
-                    {isStillLocked || item.status === "ACTIVE" ? (
+                    {isEarlyClose ? (
+                      canReviewEarlyClose ? (
+                        <div className="d-flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => {
+                              setOpen(false);
+                              const targetUrl =
+                                user.role === "COO" && item.branchId
+                                  ? `/branch/shifts?branchId=${item.branchId}&tab=operations`
+                                  : "/branch/shifts?tab=operations";
+                              navigate(targetUrl);
+                              window.dispatchEvent(
+                                new CustomEvent("scms:shift-refresh-requested", {
+                                  detail: { branchId: item.branchId, shiftId: item.referenceShiftId },
+                                }),
+                              );
+                            }}
+                          >
+                            Mở Ca &amp; Xác nhận →
+                          </Button>
+                        </div>
+                      ) : null
+                    ) : isStillLocked || item.status === "ACTIVE" ? (
                       <div className="d-flex gap-2">
                         {isStillLocked ? (
                           <Button

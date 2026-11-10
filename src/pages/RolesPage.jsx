@@ -10,6 +10,7 @@ import { roleLabel } from "../auth/landing.js";
 import { buildMenu } from "../config/menu.js";
 import { rolesApi } from "../api/rolesApi.js";
 import { usersApi } from "../api/usersApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { POSITION_LABELS } from "./EmployeesPage.jsx";
 
 // Nhãn + nhóm cho từng mã quyền của PermissionCatalog (backend).
@@ -88,8 +89,8 @@ export default function RolesPage() {
 
   const loadEmployees = useCallback(async () => {
     try {
-      const page = await usersApi.list({ uiPage: 1, size: 100 });
-      setEmployees(page.items || []);
+      const items = await fetchAllPages((p) => usersApi.list(p));
+      setEmployees(items);
     } catch {
       setEmployees([]);
     }

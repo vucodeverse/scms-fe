@@ -7,6 +7,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { branchesApi } from "../api/branchesApi.js";
 import { usersApi } from "../api/usersApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { BRANCH_STATUS_LABELS } from "../config/userConstants.js";
 
 const EMPTY_FORM = () => ({
@@ -45,21 +46,22 @@ export default function BranchEditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const unassignedReq = usersApi.list({
-        uiPage: 1,
-        size: 100,
-        role: "BRANCH_MANAGER",
-        status: "ACTIVE",
-        unassigned: true,
-      });
+      const unassignedReq = fetchAllPages((p) =>
+        usersApi.list({
+          ...p,
+          role: "BRANCH_MANAGER",
+          status: "ACTIVE",
+          unassigned: true,
+        }),
+      );
       if (!editingId) {
-        const pool = await unassignedReq;
-        setUnassignedManagers(pool.items || []);
+        const poolItems = await unassignedReq;
+        setUnassignedManagers(poolItems);
         setLoading(false);
         return;
       }
-      const [detail, pool] = await Promise.all([branchesApi.detail(editingId), unassignedReq]);
-      setUnassignedManagers(pool.items || []);
+      const [detail, poolItems] = await Promise.all([branchesApi.detail(editingId), unassignedReq]);
+      setUnassignedManagers(poolItems);
       setForm({
         code: detail.code || "",
         name: detail.name || "",

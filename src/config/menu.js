@@ -9,6 +9,7 @@ export const APP_MENU = [
     group: "Vận hành",
     items: [
       { key: "shifts", label: "Ca & phân ca", path: "/branch/shifts", icon: "clock", permission: PERMISSIONS.SHIFT_MANAGE, roles: ["COO", "BRANCH_MANAGER"] },
+      { key: "orders", label: "Đơn hàng tại quầy", path: "/branch/orders", icon: "orders", permission: PERMISSIONS.ORDER_VIEW, roles: ["COO", "BRANCH_MANAGER"] },
       { key: "inventory", label: "Kho", path: "/branch/inventory", icon: "inventory", permission: PERMISSIONS.INVENTORY_MANAGE },
       { key: "branch-overview", label: "Tổng quan chi nhánh", path: "/branch/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
       { key: "chain-overview", label: "Tổng quan chuỗi", path: "/chain/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
@@ -54,10 +55,10 @@ export const POS_MENU = [
   },
 ];
 
-// Xây dựng menu quầy POS theo trạng thái mở khóa PIN, trạng thái ca & khóa bàn giao két giữa ca.
-// Thu ngân phải mở khóa PIN, kiểm két & mở ca (và không bị khóa bàn giao) trước khi mở mục Gọi món (POS).
-export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPending = false } = {}) {
-  const canOpenPos = Boolean(unlocked && shiftOpen && !handoverPending);
+// Xây dựng menu quầy POS theo trạng thái mở khóa PIN, trạng thái ca, khóa bàn giao & chờ đóng ca sớm.
+// Thu ngân phải mở khóa PIN, kiểm két & mở ca (và không bị khóa bàn giao / đóng ca sớm) trước khi mở mục Gọi món (POS).
+export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPending = false, earlyClosePending = false } = {}) {
+  const canOpenPos = Boolean(unlocked && shiftOpen && !handoverPending && !earlyClosePending);
   return [
     {
       group: "Quầy bán hàng",
@@ -68,12 +69,22 @@ export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPendi
           path: "/pos",
           icon: "pos",
           disabled: !canOpenPos,
-          badge: !canOpenPos ? (!unlocked ? "PIN" : !shiftOpen ? "Mở ca" : "Bàn giao") : undefined,
+          badge: !canOpenPos
+            ? !unlocked
+              ? "PIN"
+              : !shiftOpen
+                ? "Mở ca"
+                : earlyClosePending
+                  ? "Chờ đóng"
+                  : "Bàn giao"
+            : undefined,
           disabledReason: !unlocked
             ? "Vui lòng nhập PIN mở khóa Thu ngân tại Ca & két tiền"
             : !shiftOpen
               ? "Vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)"
-              : "Két tiền đang tạm khóa chờ người mới kiểm két nhận bàn giao giữa ca tại Ca & két tiền",
+              : earlyClosePending
+                ? "Ca đang chờ Quản lý chi nhánh xác nhận đóng ca sớm tại Ca & két tiền"
+                : "Két tiền đang tạm khóa chờ người mới kiểm két nhận bàn giao giữa ca tại Ca & két tiền",
         },
         {
           key: "orders",
@@ -90,9 +101,9 @@ export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPendi
 }
 
 // Lọc menu theo permissions và roles của người dùng hiện tại; nhóm rỗng bị loại.
-// Khi chưa đăng nhập hoặc là Thu ngân (CASHIER): chỉ hiển thị các chức năng quầy POS.
+// Khi chưa đăng nhập hoặc là nhân sự tại quầy (Thu ngân / Pha chế / Phục vụ): chỉ hiển thị menu POS.
 export function buildMenu(user) {
-  if (!user || user.role === "CASHIER") return POS_MENU;
+  if (!user || (user.role !== "COO" && user.role !== "BRANCH_MANAGER")) return POS_MENU;
   const permissions = Array.isArray(user.permissions) ? user.permissions : [];
   return APP_MENU.map((section) => ({
     ...section,

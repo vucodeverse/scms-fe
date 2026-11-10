@@ -2,12 +2,9 @@ import { http } from "./client.js";
 import { buildListParams, normalizePage } from "./paging.js";
 
 // API sản phẩm (UC10) — /api/v1/products.
-// LƯU Ý: không bao giờ gửi param `keyword` — backend hiện lỗi 500 ở đường
-// tìm kiếm này (ProductSpecs join association không tồn tại). Khi backend
-// sửa xong mới bật lại ô tìm kiếm.
 export const productsApi = {
-  async list({ uiPage = 1, size = 20, categoryId, status } = {}) {
-    const params = buildListParams({ uiPage, size, filters: { categoryId, status } });
+  async list({ uiPage = 1, size = 20, keyword, categoryId, status } = {}) {
+    const params = buildListParams({ uiPage, size, filters: { keyword, categoryId, status } });
     const page = await http.get("/products", { params });
     return normalizePage(page);
   },
@@ -30,7 +27,7 @@ export const productsApi = {
   },
   // --- FE-09: size/giá + topping của sản phẩm (UC11) ---
   // Công thức (UC12, chỉ đọc): GET /products/{id}/recipe?size=S|M|L
-  // -> [{ ingredientId, ingredientName, baseUnit, quantityBase, size }]
+  // -> { productId, productName, size, estimatedCogs, items: [{ ingredientId, ingredientName, baseUnit, quantityBase, unitCost, lineCost, size }] }
   recipe(id, size) {
     return http.get(`/products/${id}/recipe`, { params: size ? { size } : {} });
   },

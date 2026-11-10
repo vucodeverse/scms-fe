@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Spinner, Badge } from "react-bootstrap";
-import TaskLayout from "../../layouts/TaskLayout.jsx";
+import AdminLayout from "../../layouts/AdminLayout.jsx";
+import PageHeader from "../../components/PageHeader.jsx";
+import SessionHeaderRight from "../../components/SessionHeader.jsx";
 import StatusTag from "../../components/StatusTag.jsx";
+import { useAuth } from "../../auth/AuthContext.jsx";
+import { roleLabel } from "../../auth/landing.js";
+import { buildMenu } from "../../config/menu.js";
 import { useToast } from "../../components/ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { formatVnd, formatDateTime } from "../../lib/format.js";
@@ -10,6 +15,7 @@ import { categoriesApi } from "../../api/categoriesApi.js";
 import { productsApi } from "../../api/productsApi.js";
 import { vouchersApi } from "../../api/vouchersApi.js";
 import { syncConfigApi } from "../../api/syncConfigApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 
 const BRANCH_STATUS_LABELS = {
   OPEN: "Đang mở",
@@ -53,6 +59,8 @@ const VOUCHER_STATUS_VARIANTS = {
 // Cho phép Giám đốc vận hành (COO) chọn chi nhánh nhận đồng bộ và
 // chọn chi tiết từng Danh mục, Món ăn kèm Bảng giá và Voucher muốn phát hành.
 export default function ChainSyncPage() {
+  const { user } = useAuth();
+  const menu = buildMenu(user);
   const { navigate } = useRouter();
   const toast = useToast();
   const toastRef = useRef(toast);
@@ -103,10 +111,10 @@ export default function ChainSyncPage() {
         }
       } catch {
         const [brRes, cats, prods, voucherRes] = await Promise.all([
-          branchesApi.list({ uiPage: 1, size: 100, sortBy: "code", sortDir: "ASC" }).catch(() => ({ items: [] })),
+          fetchAllPages((p) => branchesApi.list({ ...p, sortBy: "code", sortDir: "ASC" })).then((items) => ({ items })).catch(() => ({ items: [] })),
           categoriesApi.listAll().catch(() => []),
-          syncConfigApi.getProducts().catch(() => productsApi.list({ uiPage: 1, size: 200 }).then((r) => r.items || []).catch(() => [])),
-          vouchersApi.list({ uiPage: 1, size: 100 }).catch(() => ({ items: [] })),
+          syncConfigApi.getProducts().catch(() => fetchAllPages((p) => productsApi.list(p)).catch(() => [])),
+          fetchAllPages((p) => vouchersApi.list(p)).then((items) => ({ items })).catch(() => ({ items: [] })),
         ]);
 
         brItems = brRes.items || [];
@@ -303,13 +311,23 @@ export default function ChainSyncPage() {
       (syncVouchers && (selectedVoucherIds.length > 0 || vouchers.length === 0)));
 
   return (
-    <TaskLayout
-      title="Đồng bộ chuỗi xuống chi nhánh"
-      subtitle="Phát hành danh mục, sản phẩm, bảng giá và voucher được chọn từ chuỗi xuống các chi nhánh mục tiêu."
-      screenCode="UC14"
-      codeLabel="Menu & BOM · Đồng bộ chuỗi"
-      backTo="/chain/menu"
+    <AdminLayout
+      menu={menu}
+      branchName={user?.branchName || undefined}
+      headerRight={<SessionHeaderRight />}
+      userName={user?.fullName}
+      userRole={roleLabel(user?.role)}
     >
+      <PageHeader
+        title="Đồng bộ chuỗi xuống chi nhánh"
+        screenCode="UC14 · SCR-11"
+        description="Phát hành danh mục, sản phẩm, bảng giá và voucher được chọn từ chuỗi xuống các chi nhánh mục tiêu."
+        actions={
+          <Button variant="outline-secondary" onClick={() => navigate("/chain/menu")}>
+            ← Quay lại Menu & BOM
+          </Button>
+        }
+      />
       <div className="notice notice--warn mb-3">
         <span>
           Lệnh đồng bộ sẽ phát hành các Danh mục, Món ăn kèm Bảng giá và Voucher đã chọn từ trụ sở chuỗi xuống các chi nhánh mục tiêu.
@@ -824,6 +842,6 @@ export default function ChainSyncPage() {
           </div>
         </Form>
       )}
-    </TaskLayout>
+    </AdminLayout>
   );
 }

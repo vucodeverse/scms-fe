@@ -11,6 +11,7 @@ import { isUnassignedBranchManager } from "../auth/landing.js";
 import { POSITION_LABELS, USER_STATUS_LABELS } from "../config/userConstants.js";
 import { usersApi } from "../api/usersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 
 const LOGIN_POSITIONS = ["COO", "BRANCH_MANAGER"];
 
@@ -61,8 +62,8 @@ export default function EmployeeEditPage() {
     setLoading(true);
     try {
       if (isCoo) {
-        const page = await branchesApi.list({ uiPage: 1, size: 100, sortBy: "name", sortDir: "ASC" });
-        setBranches(page.items || []);
+        const branchItems = await fetchAllPages((p) => branchesApi.list({ ...p, sortBy: "name", sortDir: "ASC" }));
+        setBranches(branchItems);
       }
       if (editingId) {
         const detail = await usersApi.detail(editingId);
@@ -98,9 +99,10 @@ export default function EmployeeEditPage() {
     load();
   }, [load]);
 
-  const isLoginPosition = editingId
-    ? hasUsername || LOGIN_POSITIONS.includes(form.position)
-    : LOGIN_POSITIONS.includes(form.position);
+  const isLoginPosition = LOGIN_POSITIONS.includes(form.position);
+  const showPasswordOnMainForm = isLoginPosition && (!editingId || !hasUsername);
+  const showPinField = !isLoginPosition;
+  const isDemotingFromManager = Boolean(editingId && originalPosition === "BRANCH_MANAGER" && !isLoginPosition);
   const BM_CREATABLE_ROLES = ["CASHIER", "BARISTA", "WAITER"];
   const roleOptions = Object.entries(POSITION_LABELS).filter(([value]) => {
     if (isCoo) return value !== "COO";
@@ -108,7 +110,9 @@ export default function EmployeeEditPage() {
     return BM_CREATABLE_ROLES.includes(value);
   });
 
-  const lockBranchEdit = Boolean(isCoo && editingId && originalPosition === "BRANCH_MANAGER");
+  const lockBranchEdit = Boolean(
+    isCoo && editingId && originalPosition === "BRANCH_MANAGER" && form.position === "BRANCH_MANAGER",
+  );
   const canHavePin = Boolean(form.branchId || (!isCoo && user?.branchId));
 
   async function submitForm(e) {
@@ -120,11 +124,11 @@ export default function EmployeeEditPage() {
       fullName: form.fullName.trim(),
       phone: form.phone.trim(),
       email: form.email.trim() || null,
-      position: editingId ? originalPosition : form.position,
+      position: form.position,
       branchId: resolvedBranchId,
       username: isLoginPosition ? form.username.trim() || null : null,
-      password: !editingId && isLoginPosition ? form.password || null : null,
-      pin: resolvedBranchId && form.pin.trim() ? form.pin.trim() : null,
+      password: showPasswordOnMainForm ? form.password || null : null,
+      pin: showPinField && resolvedBranchId && form.pin.trim() ? form.pin.trim() : null,
       cardCode: form.cardCode.trim() || null,
       hourlyRate: null,
       status: form.status,
@@ -137,10 +141,6 @@ export default function EmployeeEditPage() {
       } else {
         const created = await usersApi.create(payload);
         savedId = created.id;
-      }
-      if (editingId && isCoo && form.position !== originalPosition) {
-        await usersApi.assignRole(editingId, form.position);
-        toast.success("Đã gán vai trò mới — hiệu lực từ lần đăng nhập sau của nhân viên.");
       }
       toast.success(
         editingId ? `Đã lưu hồ sơ ${payload.fullName}.` : `Đã tạo hồ sơ ${payload.fullName}.`,
@@ -290,14 +290,14 @@ export default function EmployeeEditPage() {
                 ) : null}
                 {isLoginPosition ? (
                   <>
-                    <FormField label="Tên đăng nhập" required={!editingId} error={fe("username")}>
+                    <FormField label="Tên đăng nhập" required={!editingId || !hasUsername} error={fe("username")}>
                       <Form.Control
                         value={form.username}
                         disabled={!!editingId && hasUsername}
                         onChange={(e) => setForm({ ...form, username: e.target.value })}
                       />
                     </FormField>
-                    {!editingId ? (
+                    {showPasswordOnMainForm ? (
                       <FormField label="Mật khẩu" required error={fe("password")}>
                         <Form.Control
                           type="password"
@@ -309,29 +309,31 @@ export default function EmployeeEditPage() {
                     ) : null}
                   </>
                 ) : null}
-                <FormField
-                  label="PIN 4 số"
-                  required={!editingId && !isLoginPosition}
-                  error={fe("pin")}
-                  help={
-                    !canHavePin
-                      ? "Chỉ nhân sự thuộc chi nhánh mới dùng PIN."
-                      : editingId
-                        ? "Để trống nếu giữ nguyên PIN hiện tại. PIN là duy nhất trong chi nhánh."
-                        : isLoginPosition
-                          ? "Không bắt buộc với Quản lý; nếu nhập, PIN là duy nhất trong chi nhánh."
-                          : "Duy nhất trong chi nhánh."
-                  }
-                >
-                  <Form.Control
-                    value={form.pin}
-                    maxLength={4}
-                    inputMode="numeric"
-                    disabled={!canHavePin}
-                    onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })}
-                    placeholder={editingId ? "••••" : ""}
-                  />
-                </FormField>
+                {showPinField ? (
+                  <FormField
+                    label="PIN 4 số"
+                    required={!editingId || isDemotingFromManager}
+                    error={fe("pin")}
+                    help={
+                      !canHavePin
+                        ? "Chỉ nhân sự thuộc chi nhánh mới dùng PIN."
+                        : isDemotingFromManager
+                          ? "Bắt buộc thiết lập PIN 4 số khi chuyển sang vai trò nhân viên chi nhánh."
+                          : editingId
+                            ? "Để trống nếu giữ nguyên PIN hiện tại. PIN là duy nhất trong chi nhánh."
+                            : "Duy nhất trong chi nhánh."
+                    }
+                  >
+                    <Form.Control
+                      value={form.pin}
+                      maxLength={4}
+                      inputMode="numeric"
+                      disabled={!canHavePin}
+                      onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })}
+                      placeholder={editingId && !isDemotingFromManager ? "••••" : ""}
+                    />
+                  </FormField>
+                ) : null}
                 <FormField label="Mã RFID" error={fe("cardCode")}>
                   <Form.Control value={form.cardCode} onChange={(e) => setForm({ ...form, cardCode: e.target.value })} />
                 </FormField>

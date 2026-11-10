@@ -18,6 +18,16 @@ export function formatNumber(value) {
   return numberFormatter.format(num);
 }
 
+export function parseMoneyDigits(raw) {
+  return String(raw ?? "").replace(/\D/g, "");
+}
+
+export function formatMoneyInput(raw) {
+  const digits = parseMoneyDigits(raw);
+  if (!digits) return "";
+  return numberFormatter.format(Number(digits));
+}
+
 function pad2(n) {
   return String(n).padStart(2, "0");
 }

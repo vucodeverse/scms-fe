@@ -149,8 +149,24 @@ code,
   background-color: var(--surface);
   color: var(--ink);
   font-size: 13px;
-  padding: 7px 10px;
   min-height: 36px;
+}
+
+.form-control {
+  padding: 7px 10px;
+}
+
+.form-select {
+  padding: 7px 2.35rem 7px 10px;
+  background-position: right 0.7rem center;
+  text-overflow: ellipsis;
+}
+
+.form-select-sm {
+  min-height: 30px;
+  font-size: 12px;
+  padding: 4px 2.15rem 4px 8px;
+  background-position: right 0.55rem center;
 }
 
 .form-control::placeholder {
@@ -172,10 +188,18 @@ code,
 .form-select-lg {
   min-height: 46px;
   font-size: 15px;
+}
+
+.form-control-lg {
   padding: 7px 12px;
 }
 
+.form-select-lg {
+  padding: 7px 2.5rem 7px 12px;
+}
+
 .form-label {
+  display: block;
   font-size: 11px;
   line-height: 16px;
   font-weight: 600;
@@ -185,6 +209,8 @@ code,
 }
 
 .form-text {
+  display: block;
+  margin-top: 6px;
   color: var(--muted);
   font-size: 11px;
 }

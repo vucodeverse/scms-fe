@@ -119,6 +119,9 @@ export default function ShiftDetailModal({
               : `Chi tiết ca #${shiftId || ""}`}
           </Modal.Title>
           {statusMeta ? <StatusTag status={shift.status} label={statusMeta.label} variant={statusMeta.variant} /> : null}
+          {shift?.earlyClosePending ? (
+            <StatusTag status="EARLY_CLOSE_PENDING" label="Chờ duyệt đóng ca sớm" variant="warn" />
+          ) : null}
           {shift?.handoverPending ? (
             <StatusTag status="PENDING_RECEIVE" label="Chờ bàn giao két" variant="warn" />
           ) : null}
@@ -198,6 +201,30 @@ export default function ShiftDetailModal({
                 <div className={`notice mt-2 ${hasVariance ? "notice--warn" : ""}`}>
                   <strong>Ghi chú / giải trình kết ca:</strong>
                   <span>{shift.discrepancyReason}</span>
+                </div>
+              ) : null}
+              {(shift.earlyClosePending || shift.earlyCloseRequestedBy || shift.earlyCloseReason) ? (
+                <div className={`notice mt-2 ${shift.earlyClosePending ? "notice--warn" : ""}`}>
+                  <strong>{shift.earlyClosePending ? "!" : "i"}</strong>
+                  <span>
+                    <strong>
+                      {shift.earlyClosePending ? "Đang chờ duyệt đóng ca sớm:" : "Thông tin xin đóng ca sớm:"}
+                    </strong>{" "}
+                    {shift.earlyCloseRequestedBy ? (
+                      <>
+                        Thu ngân <strong>{shift.earlyCloseRequestedByName || actorName(shift.earlyCloseRequestedBy, resolvedEmployeeMap)}</strong>
+                      </>
+                    ) : null}
+                    {shift.earlyCloseRequestedAt ? (
+                      <> · gửi lúc <strong>{formatDateTime(shift.earlyCloseRequestedAt)}</strong></>
+                    ) : null}
+                    {shift.earlyCloseCountedCash !== null && shift.earlyCloseCountedCash !== undefined ? (
+                      <> · thực đếm khai báo: <strong>{formatVnd(shift.earlyCloseCountedCash)}</strong></>
+                    ) : null}
+                    {shift.earlyCloseReason ? (
+                      <> · Lý do: <em>{shift.earlyCloseReason}</em></>
+                    ) : null}
+                  </span>
                 </div>
               ) : null}
             </div>

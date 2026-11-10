@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Form, Spinner } from "react-bootstrap";
-import { formatVnd, formatDateTime } from "../lib/format.js";
+import { Button, Form, InputGroup, Spinner } from "react-bootstrap";
+import { formatVnd, formatDateTime, formatMoneyInput, parseMoneyDigits } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { paymentsApi } from "../api/paymentsApi.js";
 
@@ -26,11 +26,16 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
   const pollRef = useRef(null);
 
   const finalAmount = Number(order.finalAmount || 0);
-  const received = Number(cashReceived || 0);
+  const hasEnteredCash = cashReceived !== "";
+  const received = hasEnteredCash ? Number(cashReceived || 0) : 0;
+  const shortage = hasEnteredCash && received < finalAmount ? finalAmount - received : 0;
   const change = received >= finalAmount ? received - finalAmount : 0;
+  const cashPresets = finalAmount > 500000 ? [50000, 100000, 200000, 500000, 1000000] : [50000, 100000, 200000, 500000];
 
   useEffect(() => {
+    setCashReceived("");
     setCashResult(null);
+    setCashError(null);
     setQr(null);
     setPayStatus(null);
     setVoucherError(null);
@@ -47,19 +52,43 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
     []
   );
 
+  function renderCashSuccessNotice(res) {
+    const paidTotal = res.totalAmount != null ? Number(res.totalAmount) : finalAmount;
+    const paidCash = res.cashReceived != null ? Number(res.cashReceived) : received;
+    const paidChange = res.changeReturned != null ? Number(res.changeReturned) : Math.max(0, paidCash - paidTotal);
+    return (
+      <div
+        className="notice mt-3"
+        style={{ background: "var(--success-soft)", borderColor: "#bcc7b5" }}
+      >
+        <strong>✓</strong>
+        <div className="w-100">
+          <div className="fw-semibold">
+            Đã thu tiền mặt{res.paidAt ? ` · ${formatDateTime(res.paidAt)}` : ""}
+          </div>
+          <div className="stat-line mt-1" style={{ padding: "2px 0" }}>
+            <span className="text-muted">Khách phải trả</span>
+            <strong>{formatVnd(paidTotal)}</strong>
+          </div>
+          <div className="stat-line" style={{ padding: "2px 0" }}>
+            <span className="text-muted">Tiền khách đưa</span>
+            <strong>{formatVnd(paidCash)}</strong>
+          </div>
+          <div className="scms-divider my-1" />
+          <div className="stat-line" style={{ padding: "2px 0", fontSize: 15 }}>
+            <strong>Tiền thừa trả lại khách</strong>
+            <strong style={{ fontSize: 17 }}>{formatVnd(paidChange)}</strong>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (order.status !== "PENDING") {
     // Đơn đã chốt: chỉ còn hiển thị kết quả thanh toán vừa thực hiện
     // trong phiên này (tiền thừa / xác nhận VietQR) để thu ngân đối chiếu.
     if (cashResult) {
-      return (
-        <div className="notice mt-3">
-          <span>
-            Đã thu tiền mặt. Tiền thừa trả khách:{" "}
-            <strong>{formatVnd(cashResult.changeReturned)}</strong>
-            {cashResult.paidAt ? ` · ${formatDateTime(cashResult.paidAt)}` : ""}
-          </span>
-        </div>
-      );
+      return renderCashSuccessNotice(cashResult);
     }
     if (payStatus?.orderStatus === "PAID") {
       return (
@@ -226,51 +255,99 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
       {method === "CASH" ? (
         <div className="mt-3">
           {cashResult ? (
-            <div className="notice">
-              <span>
-                Đã thu tiền mặt. Tiền thừa trả khách:{" "}
-                <strong>{formatVnd(cashResult.changeReturned)}</strong>
-                {cashResult.paidAt ? ` · ${formatDateTime(cashResult.paidAt)}` : ""}
-              </span>
-            </div>
+            renderCashSuccessNotice(cashResult)
           ) : (
             <>
-              <div className="d-flex gap-2 align-items-start">
-                <Form.Control
-                  type="number"
-                  min={0}
-                  step={1000}
-                  placeholder="Số tiền khách đưa"
-                  value={cashReceived}
-                  onChange={(e) => setCashReceived(e.target.value)}
-                />
-                <Button onClick={() => setCashReceived(String(finalAmount))}>Đúng tiền</Button>
+              <Form.Label className="mb-1">Tiền mặt khách đưa (VNĐ)</Form.Label>
+              <div className="d-flex gap-2 align-items-stretch">
+                <InputGroup>
+                  <Form.Control
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="VD: 100.000"
+                    value={formatMoneyInput(cashReceived)}
+                    onChange={(e) => {
+                      setCashReceived(parseMoneyDigits(e.target.value));
+                      setCashError(null);
+                    }}
+                  />
+                  <InputGroup.Text>VNĐ</InputGroup.Text>
+                </InputGroup>
+                <Button
+                  type="button"
+                  variant="outline-secondary"
+                  style={{ whiteSpace: "nowrap" }}
+                  onClick={() => {
+                    setCashReceived(String(Math.round(finalAmount)));
+                    setCashError(null);
+                  }}
+                >
+                  Đúng tiền
+                </Button>
               </div>
               <div className="d-flex gap-2 mt-2 flex-wrap">
-                {[50000, 100000, 200000, 500000].map((v) => (
+                {cashPresets.map((v) => (
                   <Button
                     key={v}
+                    type="button"
                     size="sm"
-                    variant="outline-secondary"
-                    onClick={() => setCashReceived(String(v))}
+                    variant={hasEnteredCash && received === v ? "primary" : "outline-secondary"}
+                    onClick={() => {
+                      setCashReceived(String(v));
+                      setCashError(null);
+                    }}
                   >
                     {formatVnd(v)}
                   </Button>
                 ))}
               </div>
-              <div className="stat-line mt-2">
-                <span className="text-muted">Tiền thừa</span>
-                <strong>{formatVnd(change)}</strong>
-              </div>
+              {shortage > 0 ? (
+                <div className="notice notice--warn mt-2">
+                  <strong>!</strong>
+                  <span>
+                    Khách đưa <strong>{formatVnd(received)}</strong> — còn thiếu{" "}
+                    <strong>{formatVnd(shortage)}</strong>.
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="p-2 px-3 mt-2"
+                  style={{
+                    background: hasEnteredCash && change > 0 ? "var(--success-soft)" : "var(--paper)",
+                    border: hasEnteredCash && change > 0 ? "1px solid #bcc7b5" : "1px solid var(--line)",
+                    borderRadius: "var(--radius-sm)",
+                  }}
+                >
+                  {hasEnteredCash ? (
+                    <>
+                      <div className="stat-line" style={{ padding: "3px 0" }}>
+                        <span className="text-muted">Tiền khách đưa</span>
+                        <strong>{formatVnd(received)}</strong>
+                      </div>
+                      <div className="stat-line" style={{ padding: "3px 0" }}>
+                        <span className="text-muted">Khách phải trả</span>
+                        <strong>{formatVnd(finalAmount)}</strong>
+                      </div>
+                      <div className="scms-divider my-1" />
+                    </>
+                  ) : null}
+                  <div className="stat-line" style={{ padding: "3px 0", fontSize: 15 }}>
+                    <strong>Tiền thừa trả lại khách</strong>
+                    <strong style={{ fontSize: 17 }}>{formatVnd(change)}</strong>
+                  </div>
+                </div>
+              )}
               {cashError ? <div className="form-error mt-1">{cashError}</div> : null}
               <Button
                 className="w-100 mt-2"
                 variant="primary"
                 onClick={payCash}
-                disabled={cashBusy || received < finalAmount}
+                disabled={cashBusy || (!hasEnteredCash && finalAmount > 0) || received < finalAmount}
               >
                 {cashBusy ? <Spinner size="sm" className="me-2" /> : null}
-                Thu tiền · {formatVnd(finalAmount)}
+                {hasEnteredCash && change > 0
+                  ? `Thu ${formatVnd(received)} · Trả lại ${formatVnd(change)}`
+                  : `Thu tiền · ${formatVnd(finalAmount)}`}
               </Button>
             </>
           )}

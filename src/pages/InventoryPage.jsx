@@ -14,6 +14,7 @@ import { buildMenu } from "../config/menu.js";
 import { formatVnd } from "../lib/format.js";
 import { inventoryApi } from "../api/inventoryApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 
 const PAGE_SIZE = 10;
 
@@ -45,15 +46,14 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (user?.role === "COO" && !user?.branchId) {
-      branchesApi
-        .list({ uiPage: 1, size: 100 })
-        .then((p) => {
-          setBranches(p.items || []);
-          if ((p.items || []).length) setBranchId((cur) => cur || p.items[0].id);
+      fetchAllPages((p) => branchesApi.list(p))
+        .then((items) => {
+          setBranches(items);
+          if (items.length) setBranchId((cur) => cur || items[0].id);
         })
         .catch(() => {});
     }
-  }, [user?.branchId]);
+  }, [user?.branchId, user?.role]);
 
   const load = useCallback(async () => {
     if (unassignedManager || !branchId) {

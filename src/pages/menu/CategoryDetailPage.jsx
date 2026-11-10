@@ -7,6 +7,7 @@ import { useToast } from "../../components/ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { categoriesApi } from "../../api/categoriesApi.js";
 import { productsApi } from "../../api/productsApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 import { formatDateTime } from "../../lib/format.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
@@ -54,7 +55,7 @@ export default function CategoryDetailPage() {
       // trường đó) rồi ghép với danh sách sản phẩm theo categoryId.
       const [all, inCategory] = await Promise.all([
         categoriesApi.listAll(),
-        productsApi.list({ uiPage: 1, size: 100, categoryId }),
+        fetchAllPages((p) => productsApi.list({ ...p, categoryId })),
       ]);
       const row = all.find((c) => c.id === categoryId);
       if (!row) {
@@ -62,7 +63,7 @@ export default function CategoryDetailPage() {
         return;
       }
       setCategory(row);
-      setProducts(inCategory.items || []);
+      setProducts(inCategory || []);
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được dữ liệu danh mục.");
     } finally {

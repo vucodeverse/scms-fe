@@ -875,6 +875,32 @@
   }
 }
 
+.pos-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 460px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .pos-split-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pos-cart-selects {
+  display: grid;
+  grid-template-columns: minmax(136px, 1.48fr) minmax(110px, 1.12fr) minmax(94px, 0.9fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+@media (max-width: 480px) {
+  .pos-cart-selects {
+    grid-template-columns: 1fr;
+  }
+}
+
 .stat-line {
   display: flex;
   justify-content: space-between;
@@ -989,6 +1015,21 @@
   background: var(--paper-2);
   color: var(--ink);
   border-color: var(--line-strong);
+}
+
+.shift-slot-past {
+  width: 100%;
+  flex: 1;
+  min-height: 68px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.72;
 }
 
 .shift-slot-card {
@@ -1173,4 +1214,45 @@
   background: var(--paper);
   border-top: 1px solid var(--line);
   text-align: right;
+}
+
+/* ---------- Ô vuông nhập mã PIN từng số ---------- */
+.scms-pin-boxes {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.scms-pin-box {
+  width: 48px;
+  height: 48px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1;
+  transition: border-color 0.14s, box-shadow 0.14s, background 0.14s;
+}
+
+.scms-pin-box:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(138, 90, 59, 0.16);
+}
+
+.scms-pin-box.is-invalid {
+  border-color: #b42318;
+  background: #fff6f5;
+}
+
+.scms-pin-box:disabled {
+  background: var(--paper-2);
+  color: var(--muted);
+  cursor: not-allowed;
 }

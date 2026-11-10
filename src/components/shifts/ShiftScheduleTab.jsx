@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Form } from "react-bootstrap";
 import ConfirmDialog from "../ConfirmDialog.jsx";
 import DataTable from "../DataTable.jsx";
@@ -16,6 +16,7 @@ import {
   analyzeScheduleConflicts,
   enumerateDates,
   formatHm,
+  getScheduledOpenability,
   resolveShiftEmployeeRole,
   shortDdMm,
   todayIso,
@@ -50,6 +51,12 @@ export default function ShiftScheduleTab({
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const today = todayIso();
   const days = useMemo(() => enumerateDates(startDate, endDate, 14), [startDate, endDate]);
@@ -200,7 +207,7 @@ export default function ShiftScheduleTab({
               <div className="mt-1">
                 <StatusTag
                   status="MISMATCH"
-                  label={`Lệch giờ chuẩn (${typeMeta?.start}–${typeMeta?.end})`}
+                  label={`Ngoài khung (${typeMeta?.start}–${typeMeta?.end})`}
                   variant="warn"
                 />
               </div>
@@ -232,38 +239,59 @@ export default function ShiftScheduleTab({
     {
       key: "actions",
       header: readOnly ? "Chi tiết" : "Thao tác",
-      width: readOnly ? 120 : 230,
-      render: (s) => (
-        <div className="d-flex gap-1 flex-wrap">
-          {readOnly ? (
-            s.status !== "SCHEDULED" ? (
-              <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(s.shiftId)}>
-                Chi tiết ca
-              </Button>
+      width: readOnly ? 120 : 250,
+      render: (s) => {
+        const isPastScheduled = s.status === "SCHEDULED" && s.shiftDate && s.shiftDate < today;
+        const canEditThisShift =
+          effectiveCanManage && (s.status === "OPEN" || (s.status === "SCHEDULED" && !isPastScheduled));
+        const openability = s.status === "SCHEDULED" ? getScheduledOpenability(s, nowMs) : null;
+        return (
+          <div className="d-flex gap-1 flex-wrap align-items-center">
+            {readOnly ? (
+              s.status !== "SCHEDULED" ? (
+                <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(s.shiftId)}>
+                  Chi tiết ca
+                </Button>
+              ) : (
+                <span className="small text-muted-scms">
+                  {openability && !openability.openable ? openability.label : "Chờ mở ca"}
+                </span>
+              )
             ) : (
-              <span className="small text-muted-scms">Chờ mở ca</span>
-            )
-          ) : (
-            <>
-              {effectiveCanManage && s.status !== "CLOSED" ? (
-                <Button size="sm" variant="outline-secondary" onClick={() => onOpenEdit?.(s)}>
-                  Gán NV/Sửa
-                </Button>
-              ) : null}
-              {canQuickOpen && s.status === "SCHEDULED" ? (
-                <Button size="sm" variant="primary" onClick={() => onQuickOpenScheduledShift?.(s)}>
-                  Kiểm két &amp; Mở ca
-                </Button>
-              ) : null}
-              {effectiveCanManage && s.status === "SCHEDULED" ? (
-                <Button size="sm" variant="outline-danger" onClick={() => setDeleteTarget(s)}>
-                  Xóa
-                </Button>
-              ) : null}
-            </>
-          )}
-        </div>
-      ),
+              <>
+                {canEditThisShift ? (
+                  <Button size="sm" variant="outline-secondary" onClick={() => onOpenEdit?.(s)}>
+                    Gán NV/Sửa
+                  </Button>
+                ) : isPastScheduled ? (
+                  <StatusTag status="EXPIRED" variant="neutral" label="Đã qua ngày" />
+                ) : null}
+                {canQuickOpen && s.status === "SCHEDULED" ? (
+                  openability?.openable ? (
+                    <Button size="sm" variant="primary" onClick={() => onQuickOpenScheduledShift?.(s)}>
+                      Kiểm két &amp; Mở ca
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline-secondary"
+                      disabled
+                      title={openability?.message || "Chưa đến giờ mở ca"}
+                    >
+                      {openability?.label || "Chưa đến ca"}
+                    </Button>
+                  )
+                ) : null}
+                {effectiveCanManage && s.status === "SCHEDULED" ? (
+                  <Button size="sm" variant="outline-danger" onClick={() => setDeleteTarget(s)}>
+                    Xóa
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -361,11 +389,11 @@ export default function ShiftScheduleTab({
         <div className="notice notice--warn mb-3">
           <strong>!</strong>
           <span>
-            Có <strong>{issueShiftCount}</strong> ca đang lệch khung giờ chuẩn mới ({SHIFT_TYPE_META.MORNING.window} ·{" "}
+            Có <strong>{issueShiftCount}</strong> ca đang có khung giờ nằm ngoài phạm vi ca ({SHIFT_TYPE_META.MORNING.window} ·{" "}
             {SHIFT_TYPE_META.EVENING.window} · {SHIFT_TYPE_META.NIGHT.window}) hoặc chồng giờ hoạt động.
             {effectiveCanManage
-              ? " Bấm Gán NV/Sửa ở thẻ ca được đánh dấu để đưa về giờ chuẩn, tránh lỗi trùng lịch nhân sự (BR-15)."
-              : " Quản lý chi nhánh cần chỉnh lại khung giờ chuẩn để tránh xung đột phân ca (BR-15)."}
+              ? " Bấm Gán NV/Sửa ở thẻ ca được đánh dấu để đưa vào đúng phạm vi ca."
+              : " Quản lý chi nhánh cần chỉnh lại khung giờ ca để tránh xung đột phân ca (BR-15)."}
           </span>
         </div>
       ) : null}
@@ -420,7 +448,11 @@ export default function ShiftScheduleTab({
                           className={`shift-matrix__cell${day === today ? " is-today" : ""}`}
                         >
                           {cellShifts.length === 0 ? (
-                            effectiveCanManage ? (
+                            day < today ? (
+                              <div className="shift-slot-past" title="Không thể tạo lịch ca cho ngày đã qua">
+                                Đã qua
+                              </div>
+                            ) : effectiveCanManage ? (
                               <button
                                 type="button"
                                 className="shift-slot-empty"
@@ -445,6 +477,13 @@ export default function ShiftScheduleTab({
                               const hasIssue = hasOverlap || hasDup || hasMismatch;
                               const isHistoricalClosedSibling =
                                 s.status === "CLOSED" && cellShifts.length > 1;
+                              const isPastScheduled =
+                                s.status === "SCHEDULED" && s.shiftDate && s.shiftDate < today;
+                              const canEditCard =
+                                effectiveCanManage &&
+                                (s.status === "OPEN" || (s.status === "SCHEDULED" && !isPastScheduled));
+                              const openability =
+                                s.status === "SCHEDULED" ? getScheduledOpenability(s, nowMs) : null;
                               return (
                                 <div
                                   key={s.shiftId}
@@ -485,9 +524,9 @@ export default function ShiftScheduleTab({
                                   ) : hasMismatch ? (
                                     <div
                                       className="shift-slot-warn"
-                                      title={`Khung chuẩn của ${typeMeta.label} là ${typeMeta.start}–${typeMeta.end}. Bấm Gán NV/Sửa để cập nhật.`}
+                                      title={`Phạm vi của ${typeMeta.label} là ${typeMeta.start}–${typeMeta.end} trong cùng ngày. Bấm Gán NV/Sửa để cập nhật.`}
                                     >
-                                      Lệch chuẩn ({typeMeta.start}–{typeMeta.end})
+                                      Ngoài khung ({typeMeta.start}–{typeMeta.end})
                                     </div>
                                   ) : isHistoricalClosedSibling ? (
                                     <div
@@ -510,10 +549,11 @@ export default function ShiftScheduleTab({
                                     )}
                                   </div>
 
-                                  {(effectiveCanManage && s.status !== "CLOSED") ||
+                                  {canEditCard ||
+                                  (effectiveCanManage && s.status === "SCHEDULED") ||
                                   (canQuickOpen && s.status === "SCHEDULED") ||
                                   (readOnly && s.status !== "SCHEDULED") ? (
-                                    <div className="d-flex gap-1 flex-wrap mt-2 pt-1" style={{ borderTop: "1px dashed var(--line)" }}>
+                                    <div className="d-flex gap-1 flex-wrap mt-2 pt-1 align-items-center" style={{ borderTop: "1px dashed var(--line)" }}>
                                       {readOnly && s.status !== "SCHEDULED" ? (
                                         <Button
                                           size="sm"
@@ -524,7 +564,7 @@ export default function ShiftScheduleTab({
                                           Chi tiết ca
                                         </Button>
                                       ) : null}
-                                      {effectiveCanManage && s.status !== "CLOSED" ? (
+                                      {canEditCard ? (
                                         <Button
                                           size="sm"
                                           variant="outline-secondary"
@@ -535,15 +575,27 @@ export default function ShiftScheduleTab({
                                         </Button>
                                       ) : null}
                                       {canQuickOpen && s.status === "SCHEDULED" ? (
-                                        <Button
-                                          size="sm"
-                                          variant="primary"
-                                          style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
-                                          onClick={() => onQuickOpenScheduledShift?.(s)}
-                                          title="Chuyển sang Kiểm két & Mở ca phân công này"
-                                        >
-                                          Kiểm két &amp; Mở
-                                        </Button>
+                                        openability?.openable ? (
+                                          <Button
+                                            size="sm"
+                                            variant="primary"
+                                            style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
+                                            onClick={() => onQuickOpenScheduledShift?.(s)}
+                                            title="Chuyển sang Kiểm két & Mở ca phân công này"
+                                          >
+                                            Kiểm két &amp; Mở
+                                          </Button>
+                                        ) : (
+                                          <Button
+                                            size="sm"
+                                            variant="outline-secondary"
+                                            disabled
+                                            style={{ fontSize: 11, minHeight: 24, padding: "0 7px" }}
+                                            title={openability?.message || "Chưa đến giờ mở ca"}
+                                          >
+                                            {openability?.label || "Chưa đến ca"}
+                                          </Button>
+                                        )
                                       ) : null}
                                       {effectiveCanManage && s.status === "SCHEDULED" ? (
                                         <Button

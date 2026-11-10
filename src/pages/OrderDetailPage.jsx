@@ -23,15 +23,18 @@ export default function OrderDetailPage() {
   const { query, navigate } = useRouter();
   const { user, status: authStatus } = useAuth();
   const toast = useToast();
-  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false });
+  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false, earlyClosePending: false });
+  const isManagerRole = user?.role === "COO" || user?.role === "BRANCH_MANAGER";
+  const isCashierScope = Boolean(user && !isManagerRole);
   const menu =
     !user || authStatus !== "authenticated"
-      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false })
-      : user.role === "CASHIER"
+      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false, earlyClosePending: false })
+      : isCashierScope
         ? buildPosMenu({
             unlocked: true,
             shiftOpen: shiftState.open,
             handoverPending: shiftState.handoverPending,
+            earlyClosePending: shiftState.earlyClosePending,
           })
         : buildMenu(user);
   const toastRef = useRef(toast);
@@ -39,6 +42,7 @@ export default function OrderDetailPage() {
   const id = Number(query?.id);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [order, setOrder] = useState(null);
   const [payInfo, setPayInfo] = useState(null);
   const [showCancel, setShowCancel] = useState(false);
@@ -57,10 +61,11 @@ export default function OrderDetailPage() {
   const refreshShiftState = useCallback(() => {
     if (
       authStatus !== "authenticated" ||
-      (user?.role !== "CASHIER" && user?.role !== "BRANCH_MANAGER") ||
+      !user ||
+      user.role === "COO" ||
       !effectiveBranchId
     ) {
-      setShiftState({ open: false, handoverPending: false });
+      setShiftState({ open: false, handoverPending: false, earlyClosePending: false });
       return;
     }
     shiftsApi
@@ -69,10 +74,11 @@ export default function OrderDetailPage() {
         setShiftState({
           open: true,
           handoverPending: Boolean(sum?.shift?.handoverPending),
+          earlyClosePending: Boolean(sum?.shift?.earlyClosePending),
         }),
       )
-      .catch(() => setShiftState({ open: false, handoverPending: false }));
-  }, [authStatus, user?.role, effectiveBranchId]);
+      .catch(() => setShiftState({ open: false, handoverPending: false, earlyClosePending: false }));
+  }, [authStatus, user, effectiveBranchId]);
 
   useEffect(() => {
     refreshShiftState();
@@ -81,6 +87,7 @@ export default function OrderDetailPage() {
   const load = useCallback(async () => {
     if (authStatus !== "authenticated" || !user) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const detail = await ordersApi.detail(id);
       setOrder(detail);
@@ -90,8 +97,12 @@ export default function OrderDetailPage() {
         } catch {
           setPayInfo(null);
         }
+      } else {
+        setPayInfo(null);
       }
     } catch (err) {
+      setOrder(null);
+      setLoadError(err.message || "Không tải được chi tiết đơn hàng.");
       toastRef.current.error(err.message || "Không tải được chi tiết đơn hàng.");
     } finally {
       setLoading(false);
@@ -137,7 +148,7 @@ export default function OrderDetailPage() {
         description="Thông tin đơn, các món đã gọi và các thao tác thanh toán / hủy đơn."
         actions={
           <div className="d-flex gap-2">
-            {user?.role === "CASHIER" && !shiftState.open ? (
+            {isCashierScope && !shiftState.open ? (
               <Button
                 variant="outline-primary"
                 size="sm"
@@ -145,6 +156,15 @@ export default function OrderDetailPage() {
                 href="#/branch/shifts"
               >
                 Kiểm két &amp; Mở ca →
+              </Button>
+            ) : shiftState.earlyClosePending ? (
+              <Button
+                variant="outline-primary"
+                size="sm"
+                onClick={() => navigate("/branch/shifts")}
+                href="#/branch/shifts"
+              >
+                Chờ duyệt đóng ca →
               </Button>
             ) : shiftState.handoverPending ? (
               <Button
@@ -177,7 +197,16 @@ export default function OrderDetailPage() {
         }
       />
 
-      {shiftState.handoverPending ? (
+      {shiftState.earlyClosePending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Ca hiện tại đang chờ Quản lý xác nhận đóng ca sớm:</strong> tạm dừng thu tiền mặt, tạo VietQR hoặc hoàn tiền cho đến khi Quản lý duyệt đóng ca hoặc yêu cầu được hủy/từ chối.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : shiftState.handoverPending ? (
         <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
           <span>
             <strong>Két tiền ca hiện tại đang tạm khóa chờ xác nhận bàn giao giữa ca:</strong> tạm dừng thu tiền mặt, tạo VietQR hoặc hoàn tiền cho đến khi người nhận kiểm két nhận ca.
@@ -192,10 +221,20 @@ export default function OrderDetailPage() {
         <div className="text-center py-5">
           <Spinner className="me-2" /> Đang tải…
         </div>
+      ) : loadError ? (
+        <div className="scms-panel panel-pad">
+          <div className="notice notice--warn mb-3">
+            <strong>!</strong>
+            <span>{loadError}</span>
+          </div>
+          <Button variant="outline-secondary" onClick={() => navigate("/branch/orders")}>
+            Quay lại danh sách đơn hàng
+          </Button>
+        </div>
       ) : !order ? (
         <div className="text-muted">Không tìm thấy đơn hàng.</div>
       ) : (
-        <div className="grid-2" style={{ gridTemplateColumns: "1fr 400px", alignItems: "start" }}>
+        <div className="pos-split-grid">
           <div>
             <div className="scms-panel panel-pad">
               <div className="panel-head">
@@ -298,6 +337,24 @@ export default function OrderDetailPage() {
                   <strong>{payInfo.paymentMethod === "CASH" ? "Tiền mặt" : payInfo.paymentMethod}</strong>
                 </div>
               ) : null}
+              {payInfo?.paymentMethod === "CASH" &&
+              payInfo?.receivedAmount !== null &&
+              payInfo?.receivedAmount !== undefined ? (
+                <>
+                  <div className="stat-line" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <span className="text-muted">Tiền khách đưa</span>
+                    <strong>{formatVnd(payInfo.receivedAmount)}</strong>
+                  </div>
+                  <div className="stat-line" style={{ borderBottom: "1px solid var(--line)" }}>
+                    <span className="text-muted">Tiền thừa trả lại khách</span>
+                    <strong>
+                      {formatVnd(
+                        Math.max(0, Number(payInfo.receivedAmount) - Number(order.finalAmount || 0)),
+                      )}
+                    </strong>
+                  </div>
+                </>
+              ) : null}
               {order.note ? (
                 <div className="stat-line" style={{ borderBottom: "1px solid var(--line)" }}>
                   <span className="text-muted">Ghi chú</span>
@@ -313,9 +370,16 @@ export default function OrderDetailPage() {
 
               <OrderPaymentPanel
                 order={order}
-                onOrderChanged={(nextOrder) => {
+                onOrderChanged={async (nextOrder) => {
                   setOrder(nextOrder);
                   refreshShiftState();
+                  if (nextOrder?.status === "PAID") {
+                    try {
+                      setPayInfo(await paymentsApi.getStatus(id));
+                    } catch {
+                      // giữ nguyên trạng thái đã hiển thị ở panel thanh toán
+                    }
+                  }
                 }}
               />
               {order.status === "PENDING" ? (

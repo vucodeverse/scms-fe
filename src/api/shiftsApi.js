@@ -51,6 +51,14 @@ export const shiftsApi = {
     return http.post(`/shifts/${shiftId}/close`, payload);
   },
 
+  approveEarlyClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/early-close/approve`, payload);
+  },
+
+  rejectEarlyClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/early-close/reject`, payload);
+  },
+
   initiateHandover(shiftId, payload) {
     return http.post(`/shifts/${shiftId}/handover/initiate`, payload);
   },

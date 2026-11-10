@@ -8,6 +8,7 @@ import { useRouter } from "../router/HashRouter.jsx";
 import { vouchersApi } from "../api/vouchersApi.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
 
@@ -73,11 +74,11 @@ export default function VoucherEditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [productPage, categoryList] = await Promise.all([
-        productsApi.list({ uiPage: 1, size: 100 }),
+      const [productItems, categoryList] = await Promise.all([
+        fetchAllPages((p) => productsApi.list(p)),
         categoriesApi.listAll(),
       ]);
-      setProducts(productPage.items || []);
+      setProducts(productItems || []);
       setCategories(categoryList || []);
       if (editingId) {
         const detail = await vouchersApi.detail(editingId);

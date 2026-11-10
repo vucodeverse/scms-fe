@@ -54,7 +54,7 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
     let alive = true;
     setLoadingBranches(true);
     branchesApi
-      .list({ uiPage: 1, size: 100, sortBy: "name", sortDir: "ASC" })
+      .publicList()
       .then((res) => {
         if (!alive) return;
         const open = (res.items || []).filter((b) => b.status === "OPEN");
@@ -279,8 +279,21 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
           </Form.Group>
 
           <Form.Group className="mb-2">
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <Form.Label className="mb-0">Thu ngân tại quầy</Form.Label>
+            <div className="d-flex justify-content-between align-items-center mb-1 gap-2">
+              <div className="d-flex align-items-center gap-2">
+                <Form.Label className="mb-0">Thu ngân tại quầy</Form.Label>
+                {branchId ? (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm p-0 text-decoration-none"
+                    style={{ fontSize: 12, color: "var(--accent-dark)" }}
+                    disabled={loadingCashiers || busy}
+                    onClick={() => loadCashiers(branchId)}
+                  >
+                    <Icon name="sync" size={12} /> Làm mới
+                  </button>
+                ) : null}
+              </div>
               {selectedCashier ? (
                 !selectedCashier.hasPin ? (
                   <StatusTag status="UNASSIGNED" variant="warn" label="Chưa cấp PIN" />
@@ -302,7 +315,7 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
             >
               {cashiers.length === 0 ? (
                 <option value="">
-                  {loadingCashiers ? "Đang tải danh sách thu ngân…" : "Chi nhánh chưa có thu ngân hoạt động"}
+                  {loadingCashiers ? "Đang tải danh sách thu ngân…" : "Chưa có thu ngân nào đến giờ ca"}
                 </option>
               ) : (
                 cashiers.map((c) => (
@@ -315,6 +328,28 @@ export default function CashierPinUnlockPanel({ initialBranchId = null, onBranch
             </Form.Select>
             {cashierLoadError ? <div className="field-error mt-1">{cashierLoadError}</div> : null}
           </Form.Group>
+
+          {!loadingCashiers && branchId && !cashierLoadError && cashiers.length === 0 ? (
+            <div className="notice notice--warn mt-3">
+              <strong>!</strong>
+              <div className="flex-grow-1">
+                <div>
+                  Chưa có thu ngân khả dụng để mở khóa PIN: nhân sự được phân công vai trò{" "}
+                  <strong>Thu ngân</strong> chỉ hiển thị khi chi nhánh có <strong>ca đang mở</strong> hoặc{" "}
+                  <strong>ca đã lên lịch trong khung 60 phút trước giờ bắt đầu</strong>.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  className="mt-2"
+                  onClick={() => loadCashiers(branchId)}
+                  disabled={loadingCashiers}
+                >
+                  Kiểm tra lại danh sách ca
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {selectedCashier && !selectedCashier.hasPin ? (
             <div className="notice notice--warn mt-3">

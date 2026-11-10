@@ -4,6 +4,7 @@ import Icon from "./Icon.jsx";
 import StatusTag from "./StatusTag.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { isUnassignedBranchManager } from "../auth/landing.js";
+import { useRouter } from "../router/HashRouter.jsx";
 import { useToast } from "./ToastContext.jsx";
 import { formatDateTime } from "../lib/format.js";
 import { POSITION_LABELS } from "../config/userConstants.js";
@@ -24,6 +25,7 @@ function formatRemaining(lockedUntil, nowMs) {
 
 export default function SecurityAlertsPanel({ branchId = null }) {
   const { user } = useAuth();
+  const { navigate } = useRouter();
   const toast = useToast();
   const canView =
     Boolean(user) &&
@@ -112,7 +114,7 @@ export default function SecurityAlertsPanel({ branchId = null }) {
       >
         <div className="d-flex align-items-center gap-2 flex-wrap">
           <Icon name="bell" size={15} />
-          <strong style={{ fontSize: 13.5 }}>Cảnh báo bảo mật & khóa tạm PIN Kiosk</strong>
+          <strong style={{ fontSize: 13.5 }}>Thông báo vận hành &amp; khóa tạm PIN Kiosk</strong>
           {summary.currentlyLockedCount > 0 ? (
             <StatusTag
               status="PIN_LOCKED"
@@ -123,10 +125,10 @@ export default function SecurityAlertsPanel({ branchId = null }) {
             <StatusTag
               status="ACTIVE_ALERT"
               variant="warn"
-              label={`${summary.activeCount} cảnh báo chưa xem`}
+              label={`${summary.activeCount} thông báo chờ xử lý`}
             />
           ) : (
-            <StatusTag status="SAFE" variant="success" label="Không có PIN bị khóa" />
+            <StatusTag status="SAFE" variant="success" label="Ổn định · Không có chờ duyệt" />
           )}
         </div>
 
@@ -148,34 +150,46 @@ export default function SecurityAlertsPanel({ branchId = null }) {
       {summary.items.length === 0 ? (
         <div className="px-3 py-3 text-muted-scms small">
           {loading
-            ? "Đang kiểm tra trạng thái an toàn PIN…"
+            ? "Đang kiểm tra trạng thái vận hành & an toàn PIN…"
             : activeOnly
-              ? "Không có cảnh báo bảo mật nào đang chờ xử lý."
-              : "Chưa ghi nhận lượt khóa tạm PIN (sai quá 3 lần) nào."}
+              ? "Không có thông báo hoặc yêu cầu nào đang chờ xử lý."
+              : "Chưa ghi nhận yêu cầu đóng ca sớm hay lượt khóa tạm PIN nào."}
         </div>
       ) : (
         <div>
           {summary.items.map((item, idx) => {
-            const remaining = item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
-            const isStillLocked = Boolean(item.currentlyLocked && remaining);
+            const isEarlyClose = item.alertType === "EARLY_SHIFT_CLOSE_REQUEST";
+            const remaining = !isEarlyClose && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
+            const isStillLocked = Boolean(!isEarlyClose && item.currentlyLocked && remaining);
             const roleText = item.targetRole ? POSITION_LABELS[item.targetRole] || item.targetRole : null;
+            const canReviewEarlyClose = isEarlyClose && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
             return (
               <div
                 key={item.id}
                 className="d-flex justify-content-between align-items-center flex-wrap gap-3 px-3 py-2"
                 style={{
                   borderTop: idx === 0 ? "none" : "1px solid var(--line)",
-                  background: isStillLocked || item.status === "ACTIVE" ? "#fffaf3" : "var(--surface)",
+                  background: isStillLocked || item.status === "ACTIVE" || canReviewEarlyClose ? "#fffaf3" : "var(--surface)",
                 }}
               >
                 <div style={{ minWidth: 260, flex: 1 }}>
                   <div className="d-flex align-items-center flex-wrap gap-2 mb-1">
                     <strong style={{ fontSize: 13 }}>
-                      {item.targetUserName || `Kiosk ${item.branchName}`}
+                      {isEarlyClose
+                        ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
+                        : item.targetUserName || `Kiosk ${item.branchName}`}
                     </strong>
-                    {roleText ? <span className="small text-muted-scms">({roleText})</span> : null}
+                    {!isEarlyClose && roleText ? <span className="small text-muted-scms">({roleText})</span> : null}
                     <span className="small text-muted-scms">· {item.branchName}</span>
-                    {isStillLocked ? (
+                    {isEarlyClose ? (
+                      item.status === "APPROVED" ? (
+                        <StatusTag status="APPROVED" variant="success" label="Đã duyệt đóng ca" />
+                      ) : item.status === "REJECTED" ? (
+                        <StatusTag status="REJECTED" variant="neutral" label="Đã từ chối" />
+                      ) : (
+                        <StatusTag status="EARLY_CLOSE_PENDING" variant="warn" label="Chờ duyệt đóng ca sớm" />
+                      )
+                    ) : isStillLocked ? (
                       <StatusTag status="PIN_LOCKED" variant="warn" label={`Đang khóa · còn ${remaining}`} />
                     ) : item.status === "UNLOCKED" ? (
                       <StatusTag status="UNLOCKED" variant="success" label="Đã mở khóa sớm" />
@@ -199,6 +213,26 @@ export default function SecurityAlertsPanel({ branchId = null }) {
                 </div>
 
                 <div className="d-flex align-items-center gap-2">
+                  {canReviewEarlyClose ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        const targetUrl =
+                          user.role === "COO" && item.branchId
+                            ? `/branch/shifts?branchId=${item.branchId}&tab=operations`
+                            : "/branch/shifts?tab=operations";
+                        navigate(targetUrl);
+                        window.dispatchEvent(
+                          new CustomEvent("scms:shift-refresh-requested", {
+                            detail: { branchId: item.branchId, shiftId: item.referenceShiftId },
+                          }),
+                        );
+                      }}
+                    >
+                      Mở Ca &amp; Xác nhận →
+                    </Button>
+                  ) : null}
                   {isStillLocked ? (
                     <Button
                       size="sm"
@@ -210,7 +244,7 @@ export default function SecurityAlertsPanel({ branchId = null }) {
                       Mở khóa PIN sớm
                     </Button>
                   ) : null}
-                  {item.status === "ACTIVE" ? (
+                  {!isEarlyClose && item.status === "ACTIVE" ? (
                     <Button
                       size="sm"
                       variant="outline-secondary"
