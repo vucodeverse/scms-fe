@@ -268,7 +268,7 @@ export default function KioskPage() {
       return;
     }
     setBusy(true);
-    const payload = { employeeId: selected.employeeId, pin, branchId };
+    const payload = { employeeId: selected.employeeId, pin, branchId, shiftId: selected.shiftId };
     try {
       const dto = selected.isCheckedIn
         ? await attendanceApi.checkOut(payload)
@@ -278,6 +278,9 @@ export default function KioskPage() {
         title: dto.checkOutTime ? "Check-out thành công" : "Check-in thành công",
         lines: [
           ["Nhân viên", dto.employeeName || selected.fullName],
+          ...(dto.shiftLabel || selected.shiftLabel
+            ? [["Ca làm việc", dto.shiftLabel || selected.shiftLabel]]
+            : []),
           ...(dto.checkOutTime
             ? [
                 ["Giờ vào", formatTime(dto.checkInTime)],
@@ -310,12 +313,13 @@ export default function KioskPage() {
     if (!cardCode.trim() || busy || !branchId) return;
     setBusy(true);
     try {
-      const dto = await attendanceApi.cardSwipe({ cardCode: cardCode.trim(), branchId });
+      const dto = await attendanceApi.cardSwipe({ cardCode: cardCode.trim(), branchId, shiftId: selected?.shiftId });
       showResult({
         kind: "success",
         title: dto.checkOutTime ? "Check-out bằng thẻ thành công" : "Check-in bằng thẻ thành công",
         lines: [
           ["Nhân viên", dto.employeeName || ""],
+          ...(dto.shiftLabel ? [["Ca làm việc", dto.shiftLabel]] : []),
           ...(dto.checkOutTime
             ? [
                 ["Giờ vào", formatTime(dto.checkInTime)],
@@ -517,6 +521,7 @@ export default function KioskPage() {
                   ) : (
                     displayedEmployees.map((e) => (
                       <option key={e.employeeId} value={e.employeeId}>
+                        {e.isPreviousShiftUnclosed ? "⚠️ [Ca trước chưa check-out] " : ""}
                         {e.fullName} · {POSITION_LABELS[e.role] || e.role} —{" "}
                         {e.hasAssignedShift ? e.shiftLabel || "Đã gán ca" : "Chưa gán ca"}
                         {e.pinLocked ? " (Tạm khóa PIN)" : ""}
@@ -589,6 +594,20 @@ export default function KioskPage() {
                       Kiểm tra lại trạng thái mở khóa
                     </Button>
                   </div>
+                </div>
+              ) : selected && selected.isPreviousShiftUnclosed ? (
+                <div className="notice notice--warn mt-2 mb-1">
+                  <strong>⚠️</strong>
+                  <span>
+                    <strong>{selected.fullName}</strong> thuộc ca trước (<strong>{selected.shiftLabel}</strong>) nhưng chưa check-out. Vui lòng nhập PIN để check-out (Hệ thống sẽ tự động chốt sau 10 phút hết ca).
+                  </span>
+                </div>
+              ) : selected && selected.flaggedForgotCheckout ? (
+                <div className="notice notice--warn mt-2 mb-1">
+                  <strong>ℹ️</strong>
+                  <span>
+                    Ca làm việc trước của <strong>{selected.fullName}</strong> đã được hệ thống tự động check-out (đúng giờ hết ca) do quá 10 phút chưa check-out.
+                  </span>
                 </div>
               ) : selected && !selected.hasAssignedShift ? (
                 <div className="notice notice--warn mt-2 mb-1">

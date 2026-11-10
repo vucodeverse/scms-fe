@@ -27,4 +27,32 @@ export const ordersApi = {
   cancel(id, cancelReason) {
     return http.post(`/orders/${id}/cancel`, { cancelReason });
   },
+  getReceipt(id) {
+    return http.get(`/orders/${id}/receipt`);
+  },
+  async exportReceiptPdf(id) {
+    const response = await http.get(`/orders/${id}/receipt/export`, {
+      responseType: "blob",
+      rawResponse: true,
+    });
+    const fallback = `hoa-don-#${id}.pdf`;
+    let fileName = fallback;
+    const cd = response.headers?.["content-disposition"];
+    if (cd) {
+      const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(cd);
+      fileName = decodeURIComponent(match?.[1] || match?.[2] || fallback);
+    }
+    const url = URL.createObjectURL(response.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return fileName;
+  },
+  printReceipt(id) {
+    return http.post(`/orders/${id}/receipt/print`);
+  },
 };

@@ -54,7 +54,7 @@ export function getScheduledOpenability(shift, nowMs = Date.now()) {
 }
 
 export const SHIFT_TYPE_META = {
-  MORNING: { label: "Ca sáng", start: "07:00", end: "12:30", window: "07:00 – 12:30" },
+  MORNING: { label: "Ca sáng", start: "00:00", end: "12:30", window: "07:00 – 12:30" },
   EVENING: { label: "Ca chiều", start: "12:30", end: "18:00", window: "12:30 – 18:00" },
   NIGHT: { label: "Ca tối", start: "18:00", end: "23:00", window: "18:00 – 23:00" },
 };

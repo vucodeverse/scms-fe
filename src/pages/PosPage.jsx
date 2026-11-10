@@ -7,6 +7,7 @@ import StatusTag from "../components/StatusTag.jsx";
 import FormField from "../components/FormField.jsx";
 import Icon from "../components/Icon.jsx";
 import OrderPaymentPanel from "../components/OrderPaymentPanel.jsx";
+import ReceiptModal from "../components/ReceiptModal.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
@@ -64,6 +65,8 @@ export default function PosPage() {
   const [orderNote, setOrderNote] = useState("");
   const [creating, setCreating] = useState(false);
   const [order, setOrder] = useState(null); // OrderDetailDto sau khi tạo
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptOrderId, setReceiptOrderId] = useState(null);
 
   // Trạng thái modal Check in / Check out
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -294,13 +297,15 @@ export default function PosPage() {
       const activeCashierId = shiftBanner?.shift?.activeCashierId;
       const list = [...(Array.isArray(raw) ? raw : [])]
         .filter((e) => {
-          if (!e.hasAssignedShift) return false;
+          if (!e.hasAssignedShift && !e.isPreviousShiftUnclosed) return false;
           const roleUpper = (e.role || "").toUpperCase();
           if (roleUpper === "CASHIER" || roleUpper === "THU NGÂN") return false;
           if (activeCashierId && Number(e.employeeId) === Number(activeCashierId)) return false;
           return true;
         })
         .sort((a, b) => {
+          if (a.isPreviousShiftUnclosed && !b.isPreviousShiftUnclosed) return -1;
+          if (!a.isPreviousShiftUnclosed && b.isPreviousShiftUnclosed) return 1;
           return (a.fullName || "").localeCompare(b.fullName || "", "vi");
         });
 
@@ -395,6 +400,7 @@ export default function PosPage() {
       branchId: targetBranch,
       employeeId: Number(selectedEmpId),
       pin: cleanPin,
+      shiftId: emp.shiftId,
     };
 
     try {
@@ -1070,11 +1076,26 @@ export default function PosPage() {
                     setOrder(nextOrder);
                     checkShiftStatus(effectiveBranchId);
                   }}
+                  onShowReceipt={(oid) => {
+                    setReceiptOrderId(oid);
+                    setShowReceiptModal(true);
+                  }}
                 />
-                <div className="d-flex gap-2 mt-3">
+                <div className="d-flex gap-2 mt-3 flex-wrap">
                   <Button variant="outline-secondary" onClick={resetAll}>
                     {order.status === "PENDING" ? "Để đơn chờ & làm đơn mới" : "Đơn mới"}
                   </Button>
+                  {order.status === "PAID" ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        setReceiptOrderId(order.id);
+                        setShowReceiptModal(true);
+                      }}
+                    >
+                      🧾 Xem lại biên lai
+                    </Button>
+                  ) : null}
                 </div>
               </>
             )}
@@ -1124,7 +1145,7 @@ export default function PosPage() {
               </div>
             ) : (
               <>
-                <FormField label="Chọn nhân viên trong ca" required className="mb-3">
+                <FormField label="Chọn nhân viên chấm công" required className="mb-3">
                   <Form.Select
                     value={selectedEmpId}
                     onChange={(e) => {
@@ -1134,11 +1155,26 @@ export default function PosPage() {
                     }}
                     disabled={attBusy}
                   >
-                    {attEmployees.map((e) => (
-                      <option key={e.employeeId} value={e.employeeId}>
-                        {e.fullName} ({e.role}) — {e.hasAssignedShift ? e.shiftLabel || "Đã gán ca" : "Chưa gán ca"} · {e.isCheckedIn ? "Trong ca" : "Chưa vào ca"}{e.pinLocked ? " (Tạm khóa PIN)" : ""}
-                      </option>
-                    ))}
+                    {attEmployees.some((e) => e.isPreviousShiftUnclosed) ? (
+                      <optgroup label="⚠️ Nhân viên ca trước chưa check-out (Trong 10 phút ân hạn)">
+                        {attEmployees
+                          .filter((e) => e.isPreviousShiftUnclosed)
+                          .map((e) => (
+                            <option key={e.employeeId} value={e.employeeId}>
+                              ⚠️ {e.fullName} ({e.role}) — {e.shiftLabel} · [Cần check-out ca trước]
+                            </option>
+                          ))}
+                      </optgroup>
+                    ) : null}
+                    <optgroup label="Nhân viên ca hiện tại">
+                      {attEmployees
+                        .filter((e) => !e.isPreviousShiftUnclosed)
+                        .map((e) => (
+                          <option key={e.employeeId} value={e.employeeId}>
+                            {e.fullName} ({e.role}) — {e.hasAssignedShift ? e.shiftLabel || "Đã gán ca" : "Chưa gán ca"} · {e.isCheckedIn ? "Trong ca" : "Chưa vào ca"}{e.pinLocked ? " (Tạm khóa PIN)" : ""}
+                          </option>
+                        ))}
+                    </optgroup>
                   </Form.Select>
                 </FormField>
 
@@ -1152,11 +1188,18 @@ export default function PosPage() {
                         style={{ background: "var(--paper-2)" }}
                       >
                         <span className="small text-muted-scms">
-                          {emp.hasAssignedShift ? `Ca: ${emp.shiftLabel}` : "Phân công ca:"}
+                          {emp.isPreviousShiftUnclosed
+                            ? `Ca trước: ${emp.shiftLabel}`
+                            : emp.hasAssignedShift
+                            ? `Ca: ${emp.shiftLabel}`
+                            : "Phân công ca:"}
                         </span>
                         <div className="d-flex gap-1 align-items-center flex-wrap">
                           {attPinLocked ? (
                             <StatusTag status="PIN_LOCKED" variant="warn" label={`Khóa PIN · ${attLockRemaining}`} />
+                          ) : null}
+                          {emp.isPreviousShiftUnclosed ? (
+                            <StatusTag status="PENDING" variant="warn" label="Chưa check-out ca trước" />
                           ) : null}
                           <StatusTag
                             status={emp.hasAssignedShift ? emp.shiftStatus || "SCHEDULED" : "UNASSIGNED"}
@@ -1170,6 +1213,22 @@ export default function PosPage() {
                           />
                         </div>
                       </div>
+                      {emp.isPreviousShiftUnclosed ? (
+                        <div className="notice notice--warn mb-3">
+                          <strong>⚠️</strong>
+                          <span>
+                            <strong>{emp.fullName}</strong> thuộc ca trước (<strong>{emp.shiftLabel}</strong>) chưa check-out. Vui lòng nhập PIN để hoàn tất ca trước (Hệ thống sẽ tự động chốt sau 10 phút hết ca).
+                          </span>
+                        </div>
+                      ) : null}
+                      {emp.flaggedForgotCheckout ? (
+                        <div className="notice notice--warn mb-3">
+                          <strong>ℹ️</strong>
+                          <span>
+                            Ca làm việc trước của <strong>{emp.fullName}</strong> đã được hệ thống tự động check-out (đúng giờ hết ca) do quá 10 phút chưa check-out.
+                          </span>
+                        </div>
+                      ) : null}
                       {attPinLocked ? (
                         <div className="notice notice--warn mb-3">
                           <strong>!</strong>
@@ -1190,7 +1249,7 @@ export default function PosPage() {
                           </div>
                         </div>
                       ) : null}
-                      {!emp.hasAssignedShift ? (
+                      {!emp.hasAssignedShift && !emp.isPreviousShiftUnclosed ? (
                         <div className="notice notice--warn mb-3">
                           <strong>!</strong>
                           <span>Chỉ nhân viên đã được phân công ca làm việc hôm nay mới check-in / check-out được.</span>
@@ -1209,7 +1268,7 @@ export default function PosPage() {
                     placeholder="••••"
                     value={attPin}
                     onChange={(e) => setAttPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    disabled={attBusy || !selectedAttEmp?.hasAssignedShift || attPinLocked}
+                    disabled={attBusy || (!selectedAttEmp?.hasAssignedShift && !selectedAttEmp?.isPreviousShiftUnclosed) || attPinLocked}
                     style={{ fontSize: 18, letterSpacing: 4, textAlign: "center" }}
                   />
                 </FormField>
@@ -1240,15 +1299,20 @@ export default function PosPage() {
               </Button>
               {attEmployees.length > 0 && (() => {
                 const emp = attEmployees.find((x) => String(x.employeeId) === String(selectedEmpId));
+                const isPrev = emp?.isPreviousShiftUnclosed;
                 const isOut = emp?.isCheckedIn;
+                let btnLabel = isOut ? "Check Out (Tan ca)" : "Check In (Vào ca)";
+                if (isPrev) {
+                  btnLabel = `Tan ca trước (Check-out)`;
+                }
                 return (
                   <Button
-                    variant={isOut ? "outline-danger" : "primary"}
+                    variant={isPrev ? "warning" : (isOut ? "outline-danger" : "primary")}
                     type="submit"
-                    disabled={attBusy || !emp?.hasAssignedShift || attPinLocked || attPin.trim().length !== 4 || !selectedEmpId}
+                    disabled={attBusy || (!emp?.hasAssignedShift && !emp?.isPreviousShiftUnclosed) || attPinLocked || attPin.trim().length !== 4 || !selectedEmpId}
                   >
                     {attBusy ? <Spinner size="sm" className="me-2" /> : null}
-                    {isOut ? "Check Out (Tan ca)" : "Check In (Vào ca)"}
+                    {btnLabel}
                   </Button>
                 );
               })()}
@@ -1412,6 +1476,13 @@ export default function PosPage() {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Modal hiển thị & in biên lai hóa đơn */}
+      <ReceiptModal
+        show={showReceiptModal}
+        orderId={receiptOrderId}
+        onHide={() => setShowReceiptModal(false)}
+      />
     </AdminLayout>
   );
 }

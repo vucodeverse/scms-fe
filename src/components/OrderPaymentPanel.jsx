@@ -8,7 +8,7 @@ import { paymentsApi } from "../api/paymentsApi.js";
 // ở trang chi tiết đơn): áp/gỡ voucher (UC17), thu tiền mặt kèm tiền
 // thừa (UC19), tạo VietQR và theo dõi trạng thái qua polling (UC43).
 // onOrderChanged(detail) được gọi sau mỗi thao tác đổi tổng/trạng thái.
-export default function OrderPaymentPanel({ order, onOrderChanged }) {
+export default function OrderPaymentPanel({ order, onOrderChanged, onShowReceipt }) {
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherBusy, setVoucherBusy] = useState(false);
   const [voucherError, setVoucherError] = useState(null);
@@ -79,6 +79,13 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
             <strong>Tiền thừa trả lại khách</strong>
             <strong style={{ fontSize: 17 }}>{formatVnd(paidChange)}</strong>
           </div>
+          {onShowReceipt ? (
+            <div className="mt-2 text-end">
+              <Button size="sm" variant="outline-primary" onClick={() => onShowReceipt(order.id)}>
+                🧾 Xem &amp; in biên lai
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -92,8 +99,13 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
     }
     if (payStatus?.orderStatus === "PAID") {
       return (
-        <div className="notice mt-3">
+        <div className="notice mt-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
           <span>Đã xác nhận thanh toán VietQR{payStatus.paidAt ? ` · ${formatDateTime(payStatus.paidAt)}` : ""}.</span>
+          {onShowReceipt ? (
+            <Button size="sm" variant="outline-primary" onClick={() => onShowReceipt(order.id)}>
+              🧾 Xem &amp; in biên lai
+            </Button>
+          ) : null}
         </div>
       );
     }
@@ -142,6 +154,7 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
       setCashResult(result);
       const detail = await ordersApi.detail(order.id);
       onOrderChanged?.(detail);
+      onShowReceipt?.(order.id);
     } catch (err) {
       setCashError(err.message || "Không thu được tiền mặt.");
     } finally {
@@ -165,6 +178,7 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
             pollRef.current = null;
             const detail = await ordersApi.detail(order.id);
             onOrderChanged?.(detail);
+            onShowReceipt?.(order.id);
           }
         } catch {
           // bỏ qua lỗi polling lẻ; người dùng có nút kiểm tra thủ công
@@ -184,6 +198,7 @@ export default function OrderPaymentPanel({ order, onOrderChanged }) {
       if (st.orderStatus === "PAID") {
         const detail = await ordersApi.detail(order.id);
         onOrderChanged?.(detail);
+        onShowReceipt?.(order.id);
       }
     } catch (err) {
       setQrError(err.message || "Không kiểm tra được trạng thái.");
