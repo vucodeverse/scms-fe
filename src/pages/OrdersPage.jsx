@@ -41,18 +41,32 @@ export default function OrdersPage() {
   const { navigate } = useRouter();
   const { user, status: authStatus } = useAuth();
   const toast = useToast();
-  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false, earlyClosePending: false, shiftId: null, shiftType: null });
+  const [shiftState, setShiftState] = useState({
+    open: false,
+    handoverPending: false,
+    earlyClosePending: false,
+    managerClosePending: false,
+    shiftId: null,
+    shiftType: null,
+  });
   const isManagerRole = user?.role === "COO" || user?.role === "BRANCH_MANAGER";
   const isCashierScope = Boolean(user && !isManagerRole);
   const menu =
     !user || authStatus !== "authenticated"
-      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false, earlyClosePending: false })
+      ? buildPosMenu({
+          unlocked: false,
+          shiftOpen: false,
+          handoverPending: false,
+          earlyClosePending: false,
+          managerClosePending: false,
+        })
       : isCashierScope
         ? buildPosMenu({
             unlocked: true,
             shiftOpen: shiftState.open,
             handoverPending: shiftState.handoverPending,
             earlyClosePending: shiftState.earlyClosePending,
+            managerClosePending: shiftState.managerClosePending,
           })
         : buildMenu(user);
   const unassignedManager = isUnassignedBranchManager(user);
@@ -109,7 +123,14 @@ export default function OrdersPage() {
       user.role === "COO" ||
       !effectiveBranchId
     ) {
-      setShiftState({ open: false, handoverPending: false, earlyClosePending: false, shiftId: null, shiftType: null });
+      setShiftState({
+        open: false,
+        handoverPending: false,
+        earlyClosePending: false,
+        managerClosePending: false,
+        shiftId: null,
+        shiftType: null,
+      });
       return;
     }
     shiftsApi
@@ -119,11 +140,21 @@ export default function OrdersPage() {
           open: true,
           handoverPending: Boolean(sum?.shift?.handoverPending),
           earlyClosePending: Boolean(sum?.shift?.earlyClosePending),
+          managerClosePending: Boolean(sum?.shift?.managerClosePending),
           shiftId: sum?.shift?.id || null,
           shiftType: sum?.shift?.shiftType || null,
         }),
       )
-      .catch(() => setShiftState({ open: false, handoverPending: false, earlyClosePending: false, shiftId: null, shiftType: null }));
+      .catch(() =>
+        setShiftState({
+          open: false,
+          handoverPending: false,
+          earlyClosePending: false,
+          managerClosePending: false,
+          shiftId: null,
+          shiftType: null,
+        }),
+      );
   }, [authStatus, user, effectiveBranchId]);
 
   const load = useCallback(async () => {
@@ -265,6 +296,10 @@ export default function OrdersPage() {
             <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
               Kiểm két &amp; Mở ca →
             </Button>
+          ) : shiftState.managerClosePending ? (
+            <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
+              Chờ QL nhận két →
+            </Button>
           ) : shiftState.earlyClosePending ? (
             <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
               Chờ duyệt đóng ca →
@@ -280,7 +315,16 @@ export default function OrdersPage() {
           )
         }
       />
-      {shiftState.earlyClosePending ? (
+      {shiftState.managerClosePending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Ca đã bàn giao két cuối ca chờ Quản lý xác nhận:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi Quản lý xác nhận nhận két hoặc trả lại ca.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : shiftState.earlyClosePending ? (
         <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
           <span>
             <strong>Đang chờ Quản lý xác nhận đóng ca sớm:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi Quản lý duyệt đóng ca hoặc hủy yêu cầu.
@@ -307,7 +351,7 @@ export default function OrdersPage() {
               <strong>Chi nhánh chưa mở ca làm việc:</strong> Thu ngân chỉ xem được các đơn hàng phát sinh trong ca hiện tại sau khi kiểm két &amp; mở ca (không xem đơn của các ca trước).
             </span>
           </div>
-        ) : !shiftState.handoverPending && !shiftState.earlyClosePending ? (
+        ) : !shiftState.handoverPending && !shiftState.earlyClosePending && !shiftState.managerClosePending ? (
           <div className="notice mb-3">
             <strong>i</strong>
             <span>

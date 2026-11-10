@@ -25,9 +25,12 @@ import ShiftScheduleTab from "../components/shifts/ShiftScheduleTab.jsx";
 import ShiftHistoryTab from "../components/shifts/ShiftHistoryTab.jsx";
 import {
   ApproveEarlyCloseModal,
+  ApproveManagerCloseModal,
+  BetweenShiftCashModal,
   CashAdjustmentModal,
   CloseShiftModal,
   RejectEarlyCloseModal,
+  RejectManagerCloseModal,
 } from "../components/shifts/ShiftCashModals.jsx";
 import {
   AcceptHandoverModal,
@@ -125,9 +128,12 @@ export default function ShiftsPage() {
 
   // Modal states
   const [cashModalMode, setCashModalMode] = useState(null); // "IN" | "OUT" | null
+  const [betweenShiftCashMode, setBetweenShiftCashMode] = useState(null); // "PRE_OPEN_IN" | "POST_CLOSE_OUT" | null
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showApproveEarlyClose, setShowApproveEarlyClose] = useState(false);
   const [rejectEarlyCloseMode, setRejectEarlyCloseMode] = useState(null);
+  const [showApproveManagerClose, setShowApproveManagerClose] = useState(false);
+  const [showRejectManagerClose, setShowRejectManagerClose] = useState(false);
   const [pendingEarlyCloseShiftId, setPendingEarlyCloseShiftId] = useState(null);
   const handlingEarlyCloseOutcomeRef = useRef(false);
   const [showInitiateHandover, setShowInitiateHandover] = useState(false);
@@ -476,7 +482,7 @@ export default function ShiftsPage() {
 
   const handleCloseSuccess = useCallback(
     async (result) => {
-      if (result?.closed) {
+      if (result?.closed || result?.managerClosePending) {
         handlingEarlyCloseOutcomeRef.current = true;
         setPendingEarlyCloseShiftId(null);
         if (isCashier) {
@@ -630,6 +636,9 @@ export default function ShiftsPage() {
                 variant="dark"
                 label={`${SHIFT_TYPE_META[r.openShiftType]?.label || r.openShiftType} #${r.openShiftId}`}
               />
+              {r.managerClosePending ? (
+                <StatusTag status="MANAGER_CLOSE_PENDING" variant="warn" label="Chờ QL nhận két" />
+              ) : null}
               {r.earlyClosePending ? (
                 <StatusTag status="EARLY_CLOSE_PENDING" variant="warn" label="Chờ duyệt đóng ca sớm" />
               ) : null}
@@ -654,6 +663,9 @@ export default function ShiftsPage() {
         r.hasOpenShift ? (
           <div>
             <strong>{formatVnd(r.openingCash)}</strong>
+            {Number(r.preOpenCashIn || 0) > 0 ? (
+              <div className="small text-muted-scms">Nạp đầu ngày: +{formatVnd(r.preOpenCashIn)}</div>
+            ) : null}
             {r.previousClosingCash !== null && r.previousClosingCash !== undefined ? (
               <div className="small text-muted-scms">Ca trước: {formatVnd(r.previousClosingCash)}</div>
             ) : null}
@@ -661,7 +673,15 @@ export default function ShiftsPage() {
         ) : r.previousClosingCash !== null && r.previousClosingCash !== undefined ? (
           <div>
             <strong>{formatVnd(r.previousClosingCash)}</strong>
+            {Number(r.preOpenCashIn || 0) > 0 ? (
+              <div className="small text-muted-scms">+ Nạp đầu ngày: {formatVnd(r.preOpenCashIn)}</div>
+            ) : null}
             <div className="small text-muted-scms">Kết ca #{r.previousClosedShiftId}</div>
+          </div>
+        ) : Number(r.preOpenCashIn || 0) > 0 ? (
+          <div>
+            <strong>{formatVnd(r.preOpenCashIn)}</strong>
+            <div className="small text-muted-scms">Nạp đầu ngày</div>
           </div>
         ) : (
           <span className="text-muted-scms">—</span>
@@ -756,13 +776,16 @@ export default function ShiftsPage() {
   const hasOpenShift = Boolean(currentSummary?.shift);
   const isHandoverPending = Boolean(currentSummary?.shift?.handoverPending);
   const isEarlyClosePending = Boolean(currentSummary?.shift?.earlyClosePending);
-  const canChangeCashier = !loadingCurrent && (!hasOpenShift || (isHandoverPending && !isEarlyClosePending));
+  const isManagerClosePending = Boolean(currentSummary?.shift?.managerClosePending);
+  const canChangeCashier =
+    !loadingCurrent && (!hasOpenShift || (isHandoverPending && !isEarlyClosePending && !isManagerClosePending));
   const resolvedMenu = isCashier
     ? buildPosMenu({
         unlocked: true,
         shiftOpen: hasOpenShift,
         handoverPending: isHandoverPending,
         earlyClosePending: isEarlyClosePending,
+        managerClosePending: isManagerClosePending,
       })
     : buildMenu(user);
 
@@ -839,14 +862,16 @@ export default function ShiftsPage() {
               ) : null}
               {isCashier ? (
                 <Button
-                  variant={hasOpenShift && (!isHandoverPending || isEarlyClosePending) ? "outline-secondary" : "outline-primary"}
+                  variant={hasOpenShift && (!isHandoverPending || isEarlyClosePending || isManagerClosePending) ? "outline-secondary" : "outline-primary"}
                   disabled={!canChangeCashier}
                   title={
-                    isEarlyClosePending
-                      ? "Ca đang chờ Quản lý xác nhận đóng ca sớm — không thể đổi thu ngân lúc này."
-                      : hasOpenShift && !isHandoverPending
-                        ? "Thu ngân đang giữ két phải thực hiện Bàn giao két giữa ca (hoặc Đóng ca) trước khi đổi Thu ngân khác."
-                        : "Đăng xuất phiên Thu ngân hiện tại để người tiếp nhận mở khóa PIN"
+                    isManagerClosePending
+                      ? "Ca đang chờ Quản lý xác nhận nhận két cuối ca — không thể đổi thu ngân lúc này."
+                      : isEarlyClosePending
+                        ? "Ca đang chờ Quản lý xác nhận đóng ca sớm — không thể đổi thu ngân lúc này."
+                        : hasOpenShift && !isHandoverPending
+                          ? "Thu ngân đang giữ két phải thực hiện Bàn giao két giữa ca (hoặc Đóng ca) trước khi đổi Thu ngân khác."
+                          : "Đăng xuất phiên Thu ngân hiện tại để người tiếp nhận mở khóa PIN"
                   }
                   onClick={() => {
                     if (canChangeCashier) logout();
@@ -861,7 +886,15 @@ export default function ShiftsPage() {
                     Kiosk chấm công
                   </Button>
                   {currentSummary?.shift ? (
-                    isEarlyClosePending ? (
+                    isManagerClosePending ? (
+                      <Button
+                        variant="outline-secondary"
+                        disabled
+                        title="Ca đang chờ Quản lý chi nhánh xác nhận nhận két cuối ca"
+                      >
+                        Quầy POS (Chờ QL nhận két)
+                      </Button>
+                    ) : isEarlyClosePending ? (
                       <Button
                         variant="outline-secondary"
                         disabled
@@ -983,14 +1016,16 @@ export default function ShiftsPage() {
               title={
                 isCoo
                   ? currentSummary?.shift
-                    ? `Ca hiện tại (#${currentSummary.shift.id}${isEarlyClosePending ? " · chờ duyệt đóng ca" : isHandoverPending ? " · chờ bàn giao" : " đang mở"})`
+                    ? `Ca hiện tại (#${currentSummary.shift.id}${isManagerClosePending ? " · chờ QL nhận két" : isEarlyClosePending ? " · chờ duyệt đóng ca" : isHandoverPending ? " · chờ bàn giao" : " đang mở"})`
                     : "Trạng thái ca hiện tại"
                   : currentSummary?.shift
-                    ? isEarlyClosePending
-                      ? `Chờ duyệt đóng ca #${currentSummary.shift.id}`
-                      : isHandoverPending
-                        ? `Bàn giao két ca #${currentSummary.shift.id} (Chờ nhận)`
-                        : `Kiểm két & Đóng/Mở ca (Ca #${currentSummary.shift.id} đang mở)`
+                    ? isManagerClosePending
+                      ? `Chờ QL nhận két ca #${currentSummary.shift.id}`
+                      : isEarlyClosePending
+                        ? `Chờ duyệt đóng ca #${currentSummary.shift.id}`
+                        : isHandoverPending
+                          ? `Bàn giao két ca #${currentSummary.shift.id} (Chờ nhận)`
+                          : `Kiểm két & Đóng/Mở ca (Ca #${currentSummary.shift.id} đang mở)`
                     : "Kiểm két & Mở ca"
               }
             >
@@ -1019,6 +1054,9 @@ export default function ShiftsPage() {
                 onOpenRejectEarlyClose={(selfCancel = false) =>
                   setRejectEarlyCloseMode({ selfCancel: Boolean(selfCancel) })
                 }
+                onOpenApproveManagerClose={() => setShowApproveManagerClose(true)}
+                onOpenRejectManagerClose={() => setShowRejectManagerClose(true)}
+                onOpenBetweenShiftCashModal={(mode) => setBetweenShiftCashMode(mode)}
                 onOpenInitiateHandover={() => setShowInitiateHandover(true)}
                 onOpenAcceptHandover={() => setShowAcceptHandover(true)}
                 onOpenCancelHandover={() => setShowCancelHandover(true)}
@@ -1074,15 +1112,26 @@ export default function ShiftsPage() {
           </Tabs>
 
           {canAdjustCash ? (
-            <CashAdjustmentModal
-              show={Boolean(cashModalMode)}
-              mode={cashModalMode || "IN"}
-              shift={currentSummary?.shift}
-              currentCashBalance={currentSummary?.currentCashBalance}
-              userRole={user.role}
-              onClose={() => setCashModalMode(null)}
-              onSuccess={reloadAll}
-            />
+            <>
+              <CashAdjustmentModal
+                show={Boolean(cashModalMode)}
+                mode={cashModalMode || "IN"}
+                shift={currentSummary?.shift}
+                currentCashBalance={currentSummary?.currentCashBalance}
+                userRole={user.role}
+                onClose={() => setCashModalMode(null)}
+                onSuccess={reloadAll}
+              />
+              <BetweenShiftCashModal
+                show={Boolean(betweenShiftCashMode)}
+                mode={betweenShiftCashMode || "PRE_OPEN_IN"}
+                branchId={branchId}
+                previousClosed={previousClosed}
+                userRole={user.role}
+                onClose={() => setBetweenShiftCashMode(null)}
+                onSuccess={reloadAll}
+              />
+            </>
           ) : null}
 
           {!isCoo ? (
@@ -1140,13 +1189,28 @@ export default function ShiftsPage() {
           ) : null}
 
           {isManager || isCoo ? (
-            <ApproveEarlyCloseModal
-              show={showApproveEarlyClose}
-              summary={currentSummary}
-              employeeMap={employeeMap}
-              onClose={() => setShowApproveEarlyClose(false)}
-              onSuccess={reloadAll}
-            />
+            <>
+              <ApproveEarlyCloseModal
+                show={showApproveEarlyClose}
+                summary={currentSummary}
+                employeeMap={employeeMap}
+                onClose={() => setShowApproveEarlyClose(false)}
+                onSuccess={reloadAll}
+              />
+              <ApproveManagerCloseModal
+                show={showApproveManagerClose}
+                summary={currentSummary}
+                employeeMap={employeeMap}
+                onClose={() => setShowApproveManagerClose(false)}
+                onSuccess={reloadAll}
+              />
+              <RejectManagerCloseModal
+                show={showRejectManagerClose}
+                shift={currentSummary?.shift}
+                onClose={() => setShowRejectManagerClose(false)}
+                onSuccess={reloadAll}
+              />
+            </>
           ) : null}
 
           <RejectEarlyCloseModal

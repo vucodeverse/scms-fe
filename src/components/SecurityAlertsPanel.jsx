@@ -153,35 +153,47 @@ export default function SecurityAlertsPanel({ branchId = null }) {
             ? "Đang kiểm tra trạng thái vận hành & an toàn PIN…"
             : activeOnly
               ? "Không có thông báo hoặc yêu cầu nào đang chờ xử lý."
-              : "Chưa ghi nhận yêu cầu đóng ca sớm hay lượt khóa tạm PIN nào."}
+              : "Chưa ghi nhận bàn giao két cuối ca, đóng ca sớm hay lượt khóa tạm PIN nào."}
         </div>
       ) : (
         <div>
           {summary.items.map((item, idx) => {
             const isEarlyClose = item.alertType === "EARLY_SHIFT_CLOSE_REQUEST";
-            const remaining = !isEarlyClose && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
-            const isStillLocked = Boolean(!isEarlyClose && item.currentlyLocked && remaining);
+            const isManagerClose = item.alertType === "MANAGER_SHIFT_CLOSE_REQUEST";
+            const isShiftAlert = isEarlyClose || isManagerClose;
+            const remaining = !isShiftAlert && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
+            const isStillLocked = Boolean(!isShiftAlert && item.currentlyLocked && remaining);
             const roleText = item.targetRole ? POSITION_LABELS[item.targetRole] || item.targetRole : null;
-            const canReviewEarlyClose = isEarlyClose && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
+            const canReviewShiftAlert = isShiftAlert && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
             return (
               <div
                 key={item.id}
                 className="d-flex justify-content-between align-items-center flex-wrap gap-3 px-3 py-2"
                 style={{
                   borderTop: idx === 0 ? "none" : "1px solid var(--line)",
-                  background: isStillLocked || item.status === "ACTIVE" || canReviewEarlyClose ? "#fffaf3" : "var(--surface)",
+                  background: isStillLocked || item.status === "ACTIVE" || canReviewShiftAlert ? "#fffaf3" : "var(--surface)",
                 }}
               >
                 <div style={{ minWidth: 260, flex: 1 }}>
                   <div className="d-flex align-items-center flex-wrap gap-2 mb-1">
                     <strong style={{ fontSize: 13 }}>
-                      {isEarlyClose
-                        ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
-                        : item.targetUserName || `Kiosk ${item.branchName}`}
+                      {isManagerClose
+                        ? item.title || `Xác nhận nhận két cuối ca #${item.referenceShiftId || ""}`
+                        : isEarlyClose
+                          ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
+                          : item.targetUserName || `Kiosk ${item.branchName}`}
                     </strong>
-                    {!isEarlyClose && roleText ? <span className="small text-muted-scms">({roleText})</span> : null}
+                    {!isShiftAlert && roleText ? <span className="small text-muted-scms">({roleText})</span> : null}
                     <span className="small text-muted-scms">· {item.branchName}</span>
-                    {isEarlyClose ? (
+                    {isManagerClose ? (
+                      item.status === "APPROVED" ? (
+                        <StatusTag status="APPROVED" variant="success" label="Đã nhận két & đóng ca" />
+                      ) : item.status === "REJECTED" ? (
+                        <StatusTag status="REJECTED" variant="neutral" label="Đã trả lại ca" />
+                      ) : (
+                        <StatusTag status="MANAGER_CLOSE_PENDING" variant="warn" label="Chờ QL nhận két" />
+                      )
+                    ) : isEarlyClose ? (
                       item.status === "APPROVED" ? (
                         <StatusTag status="APPROVED" variant="success" label="Đã duyệt đóng ca" />
                       ) : item.status === "REJECTED" ? (
@@ -213,7 +225,7 @@ export default function SecurityAlertsPanel({ branchId = null }) {
                 </div>
 
                 <div className="d-flex align-items-center gap-2">
-                  {canReviewEarlyClose ? (
+                  {canReviewShiftAlert ? (
                     <Button
                       size="sm"
                       variant="primary"
@@ -244,7 +256,7 @@ export default function SecurityAlertsPanel({ branchId = null }) {
                       Mở khóa PIN sớm
                     </Button>
                   ) : null}
-                  {!isEarlyClose && item.status === "ACTIVE" ? (
+                  {!isShiftAlert && item.status === "ACTIVE" ? (
                     <Button
                       size="sm"
                       variant="outline-secondary"

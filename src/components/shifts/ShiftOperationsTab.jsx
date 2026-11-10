@@ -13,6 +13,7 @@ import { formatDate, formatDateTime, formatMoneyInput, formatVnd, parseMoneyDigi
 import {
   CASH_TX_META,
   HANDOVER_STATUS_META,
+  HANDOVER_TYPE_META,
   SHIFT_STATUS_META,
   SHIFT_TYPE_META,
   actorName,
@@ -73,6 +74,9 @@ export default function ShiftOperationsTab({
   onOpenCloseModal,
   onOpenApproveEarlyClose,
   onOpenRejectEarlyClose,
+  onOpenApproveManagerClose,
+  onOpenRejectManagerClose,
+  onOpenBetweenShiftCashModal,
   onOpenInitiateHandover,
   onOpenAcceptHandover,
   onOpenCancelHandover,
@@ -91,6 +95,7 @@ export default function ShiftOperationsTab({
   const [openingCash, setOpeningCash] = useState("");
   const [openNote, setOpenNote] = useState("");
   const [openingBusy, setOpeningBusy] = useState(false);
+  const [cancellingAdjId, setCancellingAdjId] = useState(null);
   const [openFieldErrors, setOpenFieldErrors] = useState({});
   const [openApiError, setOpenApiError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -177,11 +182,35 @@ export default function ShiftOperationsTab({
       previousClosed?.countedCash !== undefined,
   );
   const prevClosingCash = hasPrevClosed ? Number(previousClosed.countedCash) : null;
+  const preOpenAdjustments = Array.isArray(previousClosed?.preOpenAdjustments)
+    ? previousClosed.preOpenAdjustments
+    : [];
+  const preOpenCashIn = Number(previousClosed?.preOpenCashIn || 0);
+  const hasPreOpenCashIn = preOpenCashIn > 0;
+  const hasOpeningBaseline = hasPrevClosed || hasPreOpenCashIn;
+  const expectedOpeningCash = hasOpeningBaseline
+    ? Number(previousClosed?.expectedOpeningCash ?? (prevClosingCash ?? 0) + preOpenCashIn)
+    : null;
   const parsedOpeningCash = openingCash === "" ? NaN : Number(openingCash);
   const hasValidOpeningCash = !Number.isNaN(parsedOpeningCash) && parsedOpeningCash >= 0;
+  const belowPreOpenMinimum = hasPreOpenCashIn && hasValidOpeningCash && parsedOpeningCash < preOpenCashIn;
   const openingVariance =
-    hasPrevClosed && hasValidOpeningCash ? parsedOpeningCash - prevClosingCash : null;
+    hasOpeningBaseline && hasValidOpeningCash ? parsedOpeningCash - expectedOpeningCash : null;
   const hasOpeningDiscrepancy = openingVariance !== null && Math.abs(openingVariance) >= 0.01;
+
+  async function handleCancelPreOpen(adj) {
+    if (!adj?.id || cancellingAdjId) return;
+    setCancellingAdjId(adj.id);
+    try {
+      await shiftsApi.cancelPreOpenCashIn(adj.id, "Quản lý hủy khoản nạp đầu ngày");
+      toast.info(`Đã hủy khoản nạp đầu ngày ${formatVnd(adj.amount)}.`);
+      await onReloadAll?.();
+    } catch (err) {
+      toast.error(err.message || "Không hủy được khoản nạp đầu ngày.");
+    } finally {
+      setCancellingAdjId(null);
+    }
+  }
 
   async function handleOpenShift(e) {
     e.preventDefault();
@@ -191,10 +220,12 @@ export default function ShiftOperationsTab({
     const errs = {};
     if (openingCash === "" || Number.isNaN(amount) || amount < 0) {
       errs.openingCash = "Vui lòng nhập số tiền mặt thực đếm đầu ca >= 0.";
+    } else if (hasPreOpenCashIn && amount < preOpenCashIn) {
+      errs.openingCash = `Tổng tiền thực đếm đầu ca không thể nhỏ hơn khoản Quản lý đã nạp đầu ngày (${formatVnd(preOpenCashIn)}).`;
     }
     if (hasOpeningDiscrepancy && !openNote.trim()) {
       errs.note =
-        "Số tiền thực đếm đầu ca lệch so với kết ca trước — vui lòng ghi rõ lý do bàn giao để mở ca.";
+        "Số tiền thực đếm đầu ca lệch so với dự kiến đầu ca — vui lòng ghi rõ lý do bàn giao để mở ca.";
     }
     if (Object.keys(errs).length > 0) {
       setOpenFieldErrors(errs);
@@ -282,6 +313,7 @@ export default function ShiftOperationsTab({
     const txRows = currentSummary.transactions || [];
     const handoverRows = currentSummary.handovers || [];
     const isEarlyClosePending = Boolean(activeShift.earlyClosePending);
+    const isManagerClosePending = Boolean(activeShift.managerClosePending);
     const earlyRequesterName =
       activeShift.earlyCloseRequestedByName ||
       actorName(activeShift.earlyCloseRequestedBy, employeeMap);
@@ -292,6 +324,23 @@ export default function ShiftOperationsTab({
     const earlyHasVariance = earlyCloseVariance !== null && Math.abs(earlyCloseVariance) >= 0.01;
     const isHandoverPending = Boolean(activeShift.handoverPending);
     const pendingHandover = activeShift.pendingHandover || null;
+    const pendingManagerHandover = isManagerClosePending
+      ? pendingHandover?.handoverType === "MANAGER_CLOSE"
+        ? pendingHandover
+        : handoverRows.find((h) => h.status === "PENDING_RECEIVE" && h.handoverType === "MANAGER_CLOSE") ||
+          pendingHandover
+      : null;
+    const managerCloseCashierName = pendingManagerHandover
+      ? pendingManagerHandover.fromUserName ||
+        actorName(pendingManagerHandover.fromUserId ?? activeShift.activeCashierId, employeeMap)
+      : actorName(activeShift.activeCashierId, employeeMap);
+    const managerCloseVariance =
+      pendingManagerHandover?.outgoingVariance !== null &&
+      pendingManagerHandover?.outgoingVariance !== undefined
+        ? Number(pendingManagerHandover.outgoingVariance)
+        : null;
+    const managerCloseHasVariance =
+      managerCloseVariance !== null && Math.abs(managerCloseVariance) >= 0.01;
     const holderName =
       activeShift.activeCashierName ||
       activeShift.openedByName ||
@@ -383,35 +432,59 @@ export default function ShiftOperationsTab({
       },
       {
         key: "actors",
-        header: "Giao → Nhận",
-        render: (h) => (
-          <div className="small">
-            <div>
-              <strong>{h.fromUserName || actorName(h.fromUserId, employeeMap)}</strong>
-              {" → "}
-              <strong>{h.toUserName || (h.toUserId ? actorName(h.toUserId, employeeMap) : "Chờ nhận")}</strong>
+        header: "Loại / Giao → Nhận",
+        render: (h) => {
+          const typeInfo = HANDOVER_TYPE_META[h.handoverType] || HANDOVER_TYPE_META.MID_SHIFT;
+          const isMgrClose = h.handoverType === "MANAGER_CLOSE";
+          return (
+            <div className="small">
+              <div className="mb-1">
+                <StatusTag status={h.handoverType || "MID_SHIFT"} variant={typeInfo.variant} label={typeInfo.label} />
+              </div>
+              <div>
+                <strong>{h.fromUserName || actorName(h.fromUserId, employeeMap)}</strong>
+                {" → "}
+                <strong>
+                  {h.toUserName ||
+                    (h.toUserId ? actorName(h.toUserId, employeeMap) : isMgrClose ? "Chờ Quản lý nhận" : "Chờ nhận")}
+                </strong>
+              </div>
+              {h.cancelledByName ? <div className="text-muted-scms">Hủy bởi: {h.cancelledByName}</div> : null}
             </div>
-            {h.cancelledByName ? <div className="text-muted-scms">Hủy bởi: {h.cancelledByName}</div> : null}
-          </div>
-        ),
+          );
+        },
       },
       {
         key: "amounts",
         header: "Kiểm giao / Nhận",
         numeric: true,
-        render: (h) => (
-          <div className="small">
-            <div>
-              Giao: <strong>{formatVnd(h.outgoingCountedCash)}</strong>
-            </div>
-            <div className="text-muted-scms">Sổ: {formatVnd(h.expectedCashAtOut)}</div>
-            {h.incomingCountedCash !== null && h.incomingCountedCash !== undefined ? (
+        render: (h) => {
+          const withdrawVal = Number(h.withdrawAmount || 0);
+          const hasIn = h.incomingCountedCash !== null && h.incomingCountedCash !== undefined;
+          return (
+            <div className="small">
               <div>
-                Nhận: <strong>{formatVnd(h.incomingCountedCash)}</strong>
+                Giao: <strong>{formatVnd(h.outgoingCountedCash)}</strong>
               </div>
-            ) : null}
-          </div>
-        ),
+              <div className="text-muted-scms">Sổ: {formatVnd(h.expectedCashAtOut)}</div>
+              {hasIn ? (
+                <div>
+                  Nhận: <strong>{formatVnd(h.incomingCountedCash)}</strong>
+                </div>
+              ) : null}
+              {withdrawVal > 0 ? (
+                <>
+                  <div className="text-muted-scms">Rút cất két: −{formatVnd(withdrawVal)}</div>
+                  {hasIn ? (
+                    <div>
+                      Lưu két: <strong>{formatVnd(Number(h.incomingCountedCash) - withdrawVal)}</strong>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          );
+        },
       },
       {
         key: "variance",
@@ -445,6 +518,7 @@ export default function ShiftOperationsTab({
             <div><strong>{h.reason}</strong></div>
             {h.outgoingNote ? <div className="text-muted-scms">Giao: {h.outgoingNote}</div> : null}
             {h.incomingNote ? <div className="text-muted-scms">Nhận: {h.incomingNote}</div> : null}
+            {h.withdrawReason ? <div className="text-muted-scms">Rút cất két: {h.withdrawReason}</div> : null}
             {h.cancelReason ? <div className="text-muted-scms">Hủy: {h.cancelReason}</div> : null}
           </div>
         ),
@@ -467,6 +541,9 @@ export default function ShiftOperationsTab({
               <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
                 <span className="screen-code">CA ĐANG MỞ · #{activeShift.id}</span>
                 <StatusTag status={activeShift.status} label={statusMeta.label} variant={statusMeta.variant} />
+                {isManagerClosePending ? (
+                  <StatusTag status="MANAGER_CLOSE_PENDING" label="Chờ Quản lý nhận két cuối ca" variant="warn" />
+                ) : null}
                 {isEarlyClosePending ? (
                   <StatusTag status="EARLY_CLOSE_PENDING" label="Chờ duyệt đóng ca sớm" variant="warn" />
                 ) : null}
@@ -483,11 +560,17 @@ export default function ShiftOperationsTab({
                 <strong>{activeShift.openedByName || actorName(activeShift.openedBy, employeeMap)}</strong>
                 {" · "}Đang giữ két: <strong>{holderName}</strong>
               </div>
-              {activeShift.previousShiftId || (activeShift.previousClosingCash !== null && activeShift.previousClosingCash !== undefined) ? (
+              {activeShift.previousShiftId ||
+              (activeShift.previousClosingCash !== null && activeShift.previousClosingCash !== undefined) ||
+              Number(activeShift.preOpenCashIn || 0) > 0 ? (
                 <div className="small mt-1">
                   <span className="text-muted-scms">
                     Kiểm két đầu ca so với kết ca #{activeShift.previousShiftId || "trước"} (
-                    <strong>{formatVnd(activeShift.previousClosingCash)}</strong>):{" "}
+                    <strong>{formatVnd(activeShift.previousClosingCash ?? 0)}</strong>
+                    {Number(activeShift.preOpenCashIn || 0) > 0
+                      ? ` + Nạp đầu ngày ${formatVnd(activeShift.preOpenCashIn)}`
+                      : ""}
+                    ):{" "}
                   </span>
                   {activeHasOpeningVar ? (
                     <strong style={{ color: "var(--accent-dark)" }}>
@@ -506,7 +589,41 @@ export default function ShiftOperationsTab({
             </div>
 
             <div className="d-flex gap-2 flex-wrap">
-              {isEarlyClosePending ? (
+              {isManagerClosePending ? (
+                <>
+                  {userRole === "BRANCH_MANAGER" || userRole === "COO" ? (
+                    <>
+                      <Button variant="primary" onClick={() => onOpenApproveManagerClose?.()}>
+                        <Icon name="check" size={14} /> Xác nhận nhận két &amp; Đóng ca
+                      </Button>
+                      <Button variant="outline-danger" onClick={() => onOpenRejectManagerClose?.()}>
+                        Trả lại ca / Mở lại POS
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline-secondary"
+                      disabled
+                      title="Ca đang chờ Quản lý chi nhánh xác nhận nhận két cuối ca"
+                    >
+                      Chờ Quản lý nhận két
+                    </Button>
+                  )}
+                  {readOnly ? (
+                    <Button variant="outline-secondary" onClick={() => onViewDetail?.(activeShift.id)}>
+                      Xem chi tiết ca →
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline-secondary"
+                      disabled
+                      title="Quầy POS đang tạm khóa chờ Quản lý chi nhánh xác nhận nhận két cuối ca"
+                    >
+                      <Icon name="pos" size={14} /> Mở quầy POS (Chờ nhận két)
+                    </Button>
+                  )}
+                </>
+              ) : isEarlyClosePending ? (
                 <>
                   {userRole === "BRANCH_MANAGER" || userRole === "COO" ? (
                     <>
@@ -609,6 +726,102 @@ export default function ShiftOperationsTab({
             </div>
           </div>
         </div>
+
+        {isManagerClosePending ? (
+          <div
+            className="scms-panel panel-pad mb-3"
+            style={{ background: "var(--warn-soft)", border: "1px solid var(--accent)" }}
+          >
+            <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+              <div className="flex-grow-1">
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <strong>!</strong>
+                  <strong style={{ fontSize: 15 }}>
+                    {userRole === "BRANCH_MANAGER" || userRole === "COO"
+                      ? "Đang chờ Quản lý xác nhận nhận két cuối ca & Cất két"
+                      : "Ca đang tạm khóa chờ Quản lý xác nhận nhận két cuối ca"}
+                  </strong>
+                </div>
+                <div className="small mb-2">
+                  Thu ngân <strong>{managerCloseCashierName}</strong> đã kiểm đếm két bàn giao cuối Ca #
+                  {activeShift.id} và <strong>đã tự động Check-out</strong>.{" "}
+                  {userRole === "BRANCH_MANAGER" || userRole === "COO"
+                    ? "Vui lòng kiểm lại số tiền thực tế trong két, chọn số tiền rút cất két Quản lý (nếu có) để chốt đóng ca, hoặc trả lại ca nếu cần tiếp tục bán hàng."
+                    : "Quầy POS tạm khóa cho đến khi Quản lý xác nhận nhận két hoặc trả lại ca."}
+                </div>
+                {pendingManagerHandover ? (
+                  <div
+                    className="p-2 small"
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "var(--radius-xs)",
+                    }}
+                  >
+                    <div>
+                      <span className="text-muted-scms">Người bàn giao: </span>
+                      <strong>{managerCloseCashierName}</strong>
+                      {pendingManagerHandover.outgoingAt ? (
+                        <span className="text-muted-scms">
+                          {" "}· lúc {formatDateTime(pendingManagerHandover.outgoingAt)}
+                        </span>
+                      ) : null}
+                      {" · "}
+                      <span className="text-muted-scms">Sổ sách két: </span>
+                      <strong>
+                        {formatVnd(pendingManagerHandover.expectedCashAtOut ?? currentSummary.currentCashBalance)}
+                      </strong>
+                      {" · "}
+                      <span className="text-muted-scms">Thực đếm bàn giao: </span>
+                      <strong>{formatVnd(pendingManagerHandover.outgoingCountedCash)}</strong>
+                      {managerCloseVariance !== null ? (
+                        <>
+                          {" · "}
+                          <span className="text-muted-scms">Chênh lệch: </span>
+                          <strong>
+                            {managerCloseHasVariance ? formatSignedVnd(managerCloseVariance) : "Khớp"}
+                          </strong>
+                        </>
+                      ) : null}
+                    </div>
+                    {pendingManagerHandover.outgoingNote ? (
+                      <div className="mt-1">
+                        <span className="text-muted-scms">Giải trình chênh lệch: </span>
+                        <strong>{pendingManagerHandover.outgoingNote}</strong>
+                      </div>
+                    ) : null}
+                    {pendingManagerHandover.reason ? (
+                      <div className="mt-1">
+                        <span className="text-muted-scms">Ghi chú bàn giao: </span>
+                        <strong>{pendingManagerHandover.reason}</strong>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="d-flex flex-column gap-2">
+                {userRole === "BRANCH_MANAGER" || userRole === "COO" ? (
+                  <>
+                    <Button size="sm" variant="primary" onClick={() => onOpenApproveManagerClose?.()}>
+                      <Icon name="check" size={14} /> Xác nhận nhận két &amp; Đóng ca
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline-danger"
+                      onClick={() => onOpenRejectManagerClose?.()}
+                    >
+                      Trả lại ca / Mở lại POS
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="outline-secondary" onClick={() => onReloadAll?.()}>
+                    Làm mới trạng thái
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isEarlyClosePending ? (
           <div
@@ -761,7 +974,14 @@ export default function ShiftOperationsTab({
         <div className="mb-3">
           <KpiStrip
             items={[
-              { label: "Tiền đầu ca", value: formatVnd(currentSummary.openingCash) },
+              {
+                label: "Tiền đầu ca",
+                value: formatVnd(currentSummary.openingCash),
+                sub:
+                  Number(activeShift.preOpenCashIn || 0) > 0
+                    ? `Nạp trước mở ca: +${formatVnd(activeShift.preOpenCashIn)}`
+                    : undefined,
+              },
               { label: "Thu tiền mặt", value: formatVnd(currentSummary.cashRevenue), sub: "Bán hàng POS" },
               { label: "Chuyển khoản QR", value: formatVnd(currentSummary.transferRevenue), sub: "Không vào két" },
               { label: "Nạp thêm vào két", value: formatVnd(currentSummary.totalCashIn) },
@@ -773,11 +993,13 @@ export default function ShiftOperationsTab({
               {
                 label: "Dự kiến trong két",
                 value: formatVnd(currentSummary.currentCashBalance),
-                sub: isEarlyClosePending
-                  ? "Chờ duyệt đóng ca sớm"
-                  : isHandoverPending
-                    ? "Tạm khóa chờ bàn giao"
-                    : "Cần khớp khi đóng ca",
+                sub: isManagerClosePending
+                  ? "Chờ Quản lý nhận két"
+                  : isEarlyClosePending
+                    ? "Chờ duyệt đóng ca sớm"
+                    : isHandoverPending
+                      ? "Tạm khóa chờ bàn giao"
+                      : "Cần khớp khi đóng ca",
               },
             ]}
           />
@@ -898,6 +1120,10 @@ export default function ShiftOperationsTab({
                 <Button size="sm" variant="outline-secondary" onClick={() => onViewDetail?.(activeShift.id)}>
                   Chi tiết đối soát →
                 </Button>
+              ) : isManagerClosePending ? (
+                <Button size="sm" variant="outline-secondary" disabled>
+                  POS tạm khóa chờ nhận két
+                </Button>
               ) : isEarlyClosePending ? (
                 <Button size="sm" variant="outline-secondary" disabled>
                   POS tạm khóa chờ đóng ca
@@ -925,9 +1151,9 @@ export default function ShiftOperationsTab({
           <div className="mt-3">
             <div className="scms-panel panel-pad mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
-                <h2 className="mb-0" style={{ fontSize: 15 }}>Lịch sử bàn giao két giữa ca ({handoverRows.length})</h2>
+                <h2 className="mb-0" style={{ fontSize: 15 }}>Lịch sử bàn giao két ({handoverRows.length})</h2>
                 <p className="mb-0 text-muted-scms small">
-                  Ghi nhận kiểm đếm giao/nhận két khi đổi người trực nhưng vẫn giữ nguyên ca bán hàng đang mở.
+                  Ghi nhận bàn giao két giữa ca (đổi người trực, giữ nguyên ca đang mở) và bàn giao cuối ca cho Quản lý kiểm nhận &amp; rút cất két.
                 </p>
               </div>
             </div>
@@ -971,25 +1197,55 @@ export default function ShiftOperationsTab({
                 <div className="small text-muted-scms py-1">
                   <Spinner size="sm" className="me-2" /> Đang tải dữ liệu ca đóng gần nhất…
                 </div>
-              ) : hasPrevClosed ? (
+              ) : hasOpeningBaseline ? (
                 <>
-                  <div className="d-flex align-items-baseline gap-2 flex-wrap">
-                    <span style={{ fontSize: 14 }}>Tiền mặt kết ca bàn giao:</span>
-                    <strong className="num" style={{ fontSize: 22 }}>
-                      {formatVnd(prevClosingCash)}
-                    </strong>
-                  </div>
-                  <div className="small text-muted-scms mt-1">
-                    <strong>{SHIFT_TYPE_META[previousClosed.shiftType]?.label || previousClosed.shiftType}</strong>{" "}
-                    <span className="mono">#{previousClosed.shiftId}</span> · Ngày {formatDate(previousClosed.shiftDate)} · Đóng lúc{" "}
-                    <strong>{formatDateTime(previousClosed.closedAt)}</strong> bởi{" "}
-                    <strong>{previousClosed.closedByName || actorName(previousClosed.closedBy, employeeMap)}</strong>
-                    {previousClosed.variance !== null &&
-                    previousClosed.variance !== undefined &&
-                    Math.abs(Number(previousClosed.variance)) >= 0.01 ? (
-                      <> · Chênh lúc đóng ca: <strong>{formatSignedVnd(previousClosed.variance)}</strong></>
-                    ) : null}
-                  </div>
+                  {hasPrevClosed ? (
+                    <>
+                      <div className="d-flex align-items-baseline gap-2 flex-wrap">
+                        <span style={{ fontSize: 14 }}>Tiền mặt kết ca bàn giao:</span>
+                        <strong className="num" style={{ fontSize: 22 }}>
+                          {formatVnd(prevClosingCash)}
+                        </strong>
+                      </div>
+                      <div className="small text-muted-scms mt-1">
+                        <strong>{SHIFT_TYPE_META[previousClosed.shiftType]?.label || previousClosed.shiftType}</strong>{" "}
+                        <span className="mono">#{previousClosed.shiftId}</span> · Ngày {formatDate(previousClosed.shiftDate)} · Đóng lúc{" "}
+                        <strong>{formatDateTime(previousClosed.closedAt)}</strong> bởi{" "}
+                        <strong>{previousClosed.closedByName || actorName(previousClosed.closedBy, employeeMap)}</strong>
+                        {previousClosed.variance !== null &&
+                        previousClosed.variance !== undefined &&
+                        Math.abs(Number(previousClosed.variance)) >= 0.01 ? (
+                          <> · Chênh lúc đóng ca: <strong>{formatSignedVnd(previousClosed.variance)}</strong></>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="small text-muted-scms">Chi nhánh chưa có ca đã đóng nào trước đó (kết ca cũ: 0 đ).</div>
+                  )}
+                  {hasPreOpenCashIn ? (
+                    <div
+                      className="mt-2 p-2 small"
+                      style={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--line)",
+                        borderRadius: "var(--radius-xs)",
+                      }}
+                    >
+                      <div className="fw-semibold mb-1">
+                        Quản lý đã nạp đầu ngày trước mở ca: +{formatVnd(preOpenCashIn)}
+                      </div>
+                      {preOpenAdjustments.map((adj) => (
+                        <div key={adj.id} className="text-muted-scms">
+                          • +{formatVnd(adj.amount)} · {adj.reason} ·{" "}
+                          {adj.createdByName || actorName(adj.createdBy, employeeMap)} ({formatDateTime(adj.createdAt)})
+                        </div>
+                      ))}
+                      <div className="mt-1">
+                        Dự kiến két khi mở ca tới:{" "}
+                        <strong className="num">{formatVnd(expectedOpeningCash)}</strong>
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="small text-muted-scms">Chi nhánh chưa có ca đã đóng nào trước đó.</div>
@@ -1086,63 +1342,150 @@ export default function ShiftOperationsTab({
         </span>
       </div>
 
-      {/* Thẻ Đối soát kết ca trước */}
+      {/* Thẻ Đối soát kết ca trước & Nạp/Rút giữa hai ca */}
       <div
         className="scms-panel panel-pad mb-3"
         style={{ background: "var(--paper)", border: "1px solid var(--line-strong)" }}
       >
         <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
-          <div>
+          <div className="flex-grow-1">
             <div
               className="text-muted-scms mb-1"
               style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}
             >
-              Đối soát kết ca cũ trước khi nhận két
+              Đối soát kết ca cũ &amp; Tiền két đầu ngày
             </div>
             {loadingPreviousClosed ? (
               <div className="small text-muted-scms py-1">
                 <Spinner size="sm" className="me-2" /> Đang tải dữ liệu ca đóng gần nhất…
               </div>
-            ) : hasPrevClosed ? (
-              <>
-                <div className="d-flex align-items-baseline gap-2 flex-wrap">
-                  <span style={{ fontSize: 14 }}>Tiền mặt bàn giao từ ca trước:</span>
-                  <strong className="num" style={{ fontSize: 22 }}>
-                    {formatVnd(prevClosingCash)}
-                  </strong>
-                </div>
-                <div className="small text-muted-scms mt-1">
-                  <strong>{SHIFT_TYPE_META[previousClosed.shiftType]?.label || previousClosed.shiftType}</strong>{" "}
-                  <span className="mono">#{previousClosed.shiftId}</span> · Ngày {formatDate(previousClosed.shiftDate)} · Đóng lúc{" "}
-                  <strong>{formatDateTime(previousClosed.closedAt)}</strong> bởi{" "}
-                  <strong>{previousClosed.closedByName || actorName(previousClosed.closedBy, employeeMap)}</strong>
-                  {previousClosed.variance !== null &&
-                  previousClosed.variance !== undefined &&
-                  Math.abs(Number(previousClosed.variance)) >= 0.01 ? (
-                    <> · Chênh lúc đóng ca trước: <strong>{formatSignedVnd(previousClosed.variance)}</strong></>
-                  ) : null}
-                </div>
-              </>
             ) : (
-              <div className="small text-muted-scms">
-                Chi nhánh chưa có ca đã đóng nào trước đó. Đếm tiền mặt thực tế trong két để khai báo ca đầu tiên.
-              </div>
+              <>
+                {hasPrevClosed ? (
+                  <>
+                    <div className="d-flex align-items-baseline gap-2 flex-wrap">
+                      <span style={{ fontSize: 14 }}>Tiền mặt lưu két sau kết ca gần nhất:</span>
+                      <strong className="num" style={{ fontSize: 22 }}>
+                        {formatVnd(prevClosingCash)}
+                      </strong>
+                    </div>
+                    <div className="small text-muted-scms mt-1">
+                      <strong>{SHIFT_TYPE_META[previousClosed.shiftType]?.label || previousClosed.shiftType}</strong>{" "}
+                      <span className="mono">#{previousClosed.shiftId}</span> · Ngày {formatDate(previousClosed.shiftDate)} · Đóng lúc{" "}
+                      <strong>{formatDateTime(previousClosed.closedAt)}</strong> bởi{" "}
+                      <strong>{previousClosed.closedByName || actorName(previousClosed.closedBy, employeeMap)}</strong>
+                      {previousClosed.variance !== null &&
+                      previousClosed.variance !== undefined &&
+                      Math.abs(Number(previousClosed.variance)) >= 0.01 ? (
+                        <> · Chênh lúc đóng ca trước: <strong>{formatSignedVnd(previousClosed.variance)}</strong></>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <div className="small text-muted-scms">
+                    {hasPreOpenCashIn
+                      ? "Chi nhánh chưa có ca đã đóng trước đó (số dư ca cũ: 0 đ)."
+                      : "Chi nhánh chưa có ca đã đóng nào trước đó. Đếm tiền mặt thực tế trong két để khai báo ca đầu tiên."}
+                  </div>
+                )}
+
+                {preOpenAdjustments.length > 0 ? (
+                  <div
+                    className="mt-2 p-2 small"
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "var(--radius-xs)",
+                    }}
+                  >
+                    <div className="fw-semibold mb-1">
+                      Quản lý đã nạp đầu ngày (chờ mở ca): +{formatVnd(preOpenCashIn)}
+                    </div>
+                    <div className="d-flex flex-column gap-1">
+                      {preOpenAdjustments.map((adj) => (
+                        <div
+                          key={adj.id}
+                          className="d-flex justify-content-between align-items-center flex-wrap gap-2"
+                        >
+                          <span className="text-muted-scms">
+                            + <strong className="num text-body">{formatVnd(adj.amount)}</strong> · {adj.reason} ·{" "}
+                            {adj.createdByName || actorName(adj.createdBy, employeeMap)} (
+                            {formatDateTime(adj.createdAt)})
+                          </span>
+                          {canAdjustCash ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline-secondary"
+                              disabled={cancellingAdjId === adj.id}
+                              onClick={() => handleCancelPreOpen(adj)}
+                            >
+                              {cancellingAdjId === adj.id ? <Spinner size="sm" /> : "Hủy khoản nạp"}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {hasOpeningBaseline ? (
+                  <div className="mt-2 small">
+                    <span className="text-muted-scms">
+                      {hasPreOpenCashIn
+                        ? "Dự kiến két khi mở ca (= Kết ca cũ + Nạp đầu ngày): "
+                        : "Dự kiến két khi mở ca: "}
+                    </span>
+                    <strong className="num" style={{ fontSize: 15 }}>
+                      {formatVnd(expectedOpeningCash)}
+                    </strong>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
 
-          {hasPrevClosed && !loadingPreviousClosed ? (
-            <Button
-              type="button"
-              variant={hasValidOpeningCash && !hasOpeningDiscrepancy ? "primary" : "outline-secondary"}
-              onClick={() => {
-                setOpeningCash(String(Math.round(prevClosingCash)));
-                setOpenFieldErrors({});
-                setOpenApiError("");
-              }}
-              disabled={openingBusy}
-            >
-              Khớp kết ca cũ ({formatVnd(prevClosingCash)})
-            </Button>
+          {!loadingPreviousClosed ? (
+            <div className="d-flex flex-wrap gap-2">
+              {hasOpeningBaseline ? (
+                <Button
+                  type="button"
+                  variant={hasValidOpeningCash && !hasOpeningDiscrepancy && !belowPreOpenMinimum ? "primary" : "outline-secondary"}
+                  onClick={() => {
+                    setOpeningCash(String(Math.round(expectedOpeningCash)));
+                    setOpenFieldErrors({});
+                    setOpenApiError("");
+                  }}
+                  disabled={openingBusy}
+                >
+                  {hasPreOpenCashIn
+                    ? `Khớp dự kiến mở ca (${formatVnd(expectedOpeningCash)})`
+                    : `Khớp kết ca cũ (${formatVnd(prevClosingCash)})`}
+                </Button>
+              ) : null}
+              {canAdjustCash ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline-primary"
+                    onClick={() => onOpenBetweenShiftCashModal?.("PRE_OPEN_IN")}
+                    disabled={openingBusy}
+                  >
+                    <Icon name="plus" size={14} /> Nạp tiền đầu ngày
+                  </Button>
+                  {hasPrevClosed && prevClosingCash > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline-danger"
+                      onClick={() => onOpenBetweenShiftCashModal?.("POST_CLOSE_OUT")}
+                      disabled={openingBusy}
+                    >
+                      − Rút tiền sau kết ca
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -1392,8 +1735,8 @@ export default function ShiftOperationsTab({
               error={openFieldErrors.note}
               help={
                 hasOpeningDiscrepancy
-                  ? "Bắt buộc nhập lý do vì số tiền thực đếm khác với kết ca trước."
-                  : "Tùy chọn khi tiền trong két khớp với kết ca trước."
+                  ? `Bắt buộc nhập lý do vì số tiền thực đếm khác với ${hasPreOpenCashIn ? "dự kiến đầu ca" : "kết ca trước"}.`
+                  : `Tùy chọn khi tiền trong két khớp với ${hasPreOpenCashIn ? "dự kiến đầu ca" : "kết ca trước"}.`
               }
             >
               <Form.Control
@@ -1403,7 +1746,9 @@ export default function ShiftOperationsTab({
                 placeholder={
                   hasOpeningDiscrepancy
                     ? "VD: Quản lý tạm ứng trước khi mở ca / Ca trước kiểm sót tiền lẻ…"
-                    : "VD: Nhận bàn giao két từ ca trước"
+                    : hasPreOpenCashIn
+                      ? "VD: Đếm khớp tiền lưu ca trước cộng khoản Quản lý nạp đầu ngày"
+                      : "VD: Nhận bàn giao két từ ca trước"
                 }
                 value={openNote}
                 onChange={(e) => {
@@ -1416,24 +1761,45 @@ export default function ShiftOperationsTab({
             </FormField>
           </div>
 
-          {hasPrevClosed && hasValidOpeningCash ? (
-            <div
-              className={`notice mt-2 mb-3 ${hasOpeningDiscrepancy ? "notice--warn" : ""}`}
-              style={!hasOpeningDiscrepancy ? { background: "var(--success-soft)", borderColor: "#bcc7b5" } : undefined}
-            >
-              <strong>{hasOpeningDiscrepancy ? "!" : "✓"}</strong>
-              <span>
-                {hasOpeningDiscrepancy ? (
-                  <>
-                    Chênh lệch so với kết ca trước ({formatVnd(prevClosingCash)}):{" "}
-                    <strong>{formatSignedVnd(openingVariance)}</strong> (
-                    {openingVariance > 0 ? "Thừa tiền so với kết ca cũ" : "Thiếu tiền so với kết ca cũ"}). Vui lòng ghi rõ nguyên nhân ở ô giải trình phía trên để tiếp tục mở ca.
-                  </>
-                ) : (
-                  <>Khớp hoàn toàn với kết ca trước ({formatVnd(prevClosingCash)}).</>
-                )}
-              </span>
-            </div>
+          {hasOpeningBaseline && hasValidOpeningCash ? (
+            belowPreOpenMinimum ? (
+              <div className="notice notice--warn mt-2 mb-3">
+                <strong>!</strong>
+                <span>
+                  Số tiền thực đếm ({formatVnd(parsedOpeningCash)}) đang nhỏ hơn khoản Quản lý đã nạp đầu ngày (
+                  <strong>{formatVnd(preOpenCashIn)}</strong>). Vui lòng kiểm tra lại tiền mặt trong két.
+                </span>
+              </div>
+            ) : (
+              <div
+                className={`notice mt-2 mb-3 ${hasOpeningDiscrepancy ? "notice--warn" : ""}`}
+                style={!hasOpeningDiscrepancy ? { background: "var(--success-soft)", borderColor: "#bcc7b5" } : undefined}
+              >
+                <strong>{hasOpeningDiscrepancy ? "!" : "✓"}</strong>
+                <span>
+                  {hasOpeningDiscrepancy ? (
+                    <>
+                      Chênh lệch so với {hasPreOpenCashIn ? "dự kiến đầu ca" : "kết ca trước"} (
+                      {formatVnd(expectedOpeningCash)}
+                      {hasPreOpenCashIn
+                        ? ` = kết ca cũ ${formatVnd(prevClosingCash ?? 0)} + nạp đầu ngày ${formatVnd(preOpenCashIn)}`
+                        : ""}
+                      ): <strong>{formatSignedVnd(openingVariance)}</strong> (
+                      {openingVariance > 0 ? "Thừa tiền so với dự kiến" : "Thiếu tiền so với dự kiến"}). Vui lòng ghi rõ nguyên nhân ở ô giải trình phía trên để tiếp tục mở ca.
+                    </>
+                  ) : (
+                    <>
+                      Khớp hoàn toàn với {hasPreOpenCashIn ? "dự kiến đầu ca" : "kết ca trước"} (
+                      {formatVnd(expectedOpeningCash)}
+                      {hasPreOpenCashIn
+                        ? ` = ${formatVnd(prevClosingCash ?? 0)} + nạp đầu ngày ${formatVnd(preOpenCashIn)}`
+                        : ""}
+                      ).
+                    </>
+                  )}
+                </span>
+              </div>
+            )
           ) : null}
 
           <div className="form-actions">

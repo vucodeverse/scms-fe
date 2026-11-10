@@ -79,6 +79,11 @@ export const HANDOVER_STATUS_META = {
   CANCELLED: { label: "Đã hủy", variant: "neutral" },
 };
 
+export const HANDOVER_TYPE_META = {
+  MID_SHIFT: { label: "Đổi người giữ ca", variant: "neutral" },
+  MANAGER_CLOSE: { label: "Cuối ca → Quản lý", variant: "dark" },
+};
+
 const WEEKDAY_SHORT = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
 function pad2(n) {

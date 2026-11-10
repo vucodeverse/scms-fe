@@ -92,6 +92,7 @@ export default function PosPage() {
     shiftOpen: Boolean(shiftBanner?.open),
     handoverPending: Boolean(shiftBanner?.handoverPending),
     earlyClosePending: Boolean(shiftBanner?.earlyClosePending),
+    managerClosePending: Boolean(shiftBanner?.managerClosePending),
   });
 
   useEffect(() => {
@@ -132,15 +133,22 @@ export default function PosPage() {
         cashBalance: sum.currentCashBalance,
         handoverPending: Boolean(sum.shift?.handoverPending),
         earlyClosePending: Boolean(sum.shift?.earlyClosePending),
+        managerClosePending: Boolean(sum.shift?.managerClosePending),
       });
     } catch (err) {
       if (err?.detailCode === "SHIFT_NOT_OPEN") {
-        setShiftBanner({ open: false, handoverPending: false, earlyClosePending: false });
+        setShiftBanner({
+          open: false,
+          handoverPending: false,
+          earlyClosePending: false,
+          managerClosePending: false,
+        });
       } else {
         setShiftBanner({
           open: false,
           handoverPending: false,
           earlyClosePending: false,
+          managerClosePending: false,
           error: err?.message || "Không kiểm tra được trạng thái ca bán hàng.",
         });
       }
@@ -161,7 +169,7 @@ export default function PosPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [status, user, effectiveBranchId, checkShiftStatus]);
 
-  // Thu ngân không được vào thẳng Gọi món POS nếu chưa mở ca, đang chờ bàn giao két hoặc chờ duyệt đóng ca sớm -> đưa về Ca & két tiền
+  // Thu ngân không được vào thẳng Gọi món POS nếu chưa mở ca, đang chờ bàn giao két, chờ duyệt đóng ca sớm hoặc chờ Quản lý nhận két -> đưa về Ca & két tiền
   useEffect(() => {
     if (
       status === "authenticated" &&
@@ -170,18 +178,23 @@ export default function PosPage() {
       user.role !== "BRANCH_MANAGER" &&
       !checkingShift &&
       shiftBanner &&
-      (!shiftBanner.open || shiftBanner.handoverPending || shiftBanner.earlyClosePending)
+      (!shiftBanner.open ||
+        shiftBanner.handoverPending ||
+        shiftBanner.earlyClosePending ||
+        shiftBanner.managerClosePending)
     ) {
       if (!redirectedRef.current) {
         redirectedRef.current = true;
         toastRef.current.warning(
-          shiftBanner.earlyClosePending
-            ? "Ca đang chờ Quản lý xác nhận đóng ca sớm — vui lòng theo dõi hoặc hủy yêu cầu tại Ca & két tiền."
-            : shiftBanner.handoverPending
-              ? "Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca — vui lòng kiểm két nhận ca tại Ca & két tiền."
-              : shiftBanner.error
-                ? `${shiftBanner.error} Đang chuyển về màn Ca & két tiền.`
-                : "Chi nhánh chưa mở ca — vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)."
+          shiftBanner.managerClosePending
+            ? "Ca đã bàn giao két cuối ca — đang chờ Quản lý xác nhận nhận tiền tại Ca & két tiền."
+            : shiftBanner.earlyClosePending
+              ? "Ca đang chờ Quản lý xác nhận đóng ca sớm — vui lòng theo dõi hoặc hủy yêu cầu tại Ca & két tiền."
+              : shiftBanner.handoverPending
+                ? "Két tiền đang tạm khóa chờ xác nhận bàn giao giữa ca — vui lòng kiểm két nhận ca tại Ca & két tiền."
+                : shiftBanner.error
+                  ? `${shiftBanner.error} Đang chuyển về màn Ca & két tiền.`
+                  : "Chi nhánh chưa mở ca — vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)."
         );
       }
       navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`);
@@ -189,7 +202,8 @@ export default function PosPage() {
       status === "authenticated" &&
       shiftBanner?.open &&
       !shiftBanner?.handoverPending &&
-      !shiftBanner?.earlyClosePending
+      !shiftBanner?.earlyClosePending &&
+      !shiftBanner?.managerClosePending
     ) {
       redirectedRef.current = false;
     }
@@ -489,6 +503,10 @@ export default function PosPage() {
       toast.error("Chưa mở ca bán hàng. Vui lòng kiểm két & mở ca trước khi tạo đơn.");
       return;
     }
+    if (shiftBanner?.managerClosePending) {
+      toast.error("Ca đã bàn giao két cuối ca chờ Quản lý xác nhận. Vui lòng xử lý tại Ca & két tiền trước khi tạo đơn.");
+      return;
+    }
     if (shiftBanner?.earlyClosePending) {
       toast.error("Ca đang chờ Quản lý xác nhận đóng ca sớm. Vui lòng chờ duyệt hoặc hủy yêu cầu tại Ca & két tiền.");
       return;
@@ -527,7 +545,8 @@ export default function PosPage() {
       if (
         err?.detailCode === "SHIFT_NOT_OPEN" ||
         err?.detailCode === "SHIFT_HANDOVER_PENDING" ||
-        err?.detailCode === "SHIFT_EARLY_CLOSE_PENDING"
+        err?.detailCode === "SHIFT_EARLY_CLOSE_PENDING" ||
+        err?.detailCode === "SHIFT_MANAGER_CLOSE_PENDING"
       ) {
         checkShiftStatus(effectiveBranchId);
       }
@@ -583,7 +602,8 @@ export default function PosPage() {
                 products.length === 0 ||
                 !shiftBanner?.open ||
                 Boolean(shiftBanner?.handoverPending) ||
-                Boolean(shiftBanner?.earlyClosePending)
+                Boolean(shiftBanner?.earlyClosePending) ||
+                Boolean(shiftBanner?.managerClosePending)
               }
             >
               <Icon name="book" size={15} /> Công thức pha chế
@@ -634,6 +654,46 @@ export default function PosPage() {
               onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
             >
               Kiểm két &amp; Mở ca →
+            </Button>
+            {effectiveBranchId ? (
+              <Button
+                variant="outline-secondary"
+                onClick={() => checkShiftStatus(effectiveBranchId)}
+              >
+                Kiểm tra lại trạng thái ca
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : shiftBanner?.managerClosePending ? (
+        <div className="scms-panel panel-pad text-center mx-auto my-4" style={{ maxWidth: 660 }}>
+          <div className="notice notice--warn mb-3 text-start">
+            <strong>!</strong>
+            <span>
+              <strong>Ca làm việc đã bàn giao két cuối ca chờ Quản lý xác nhận</strong> (Ca #{shiftBanner.shift?.id} vẫn{" "}
+              <strong>ĐANG MỞ</strong>).{" "}
+              {shiftBanner.shift?.pendingHandover ? (
+                <>
+                  Thu ngân <strong>{shiftBanner.shift.pendingHandover.fromUserName || "bàn giao"}</strong> đã kiểm két{" "}
+                  <strong>{formatVnd(shiftBanner.shift.pendingHandover.outgoingCountedCash)}</strong>
+                  {shiftBanner.shift.pendingHandover.reason
+                    ? ` · Ghi chú: ${shiftBanner.shift.pendingHandover.reason}`
+                    : ""}
+                  .
+                </>
+              ) : null}
+            </span>
+          </div>
+          <h2 className="mb-2">Quầy POS đang tạm khóa chờ Quản lý nhận két cuối ca</h2>
+          <p className="text-muted-scms mb-4">
+            Quầy bán hàng tạm ngừng tạo đơn và thu tiền cho đến khi Quản lý xác nhận nhận két &amp; đóng ca (hoặc trả lại ca để mở khóa POS) tại màn Ca &amp; két tiền.
+          </p>
+          <div className="d-flex justify-content-center gap-2 flex-wrap">
+            <Button
+              variant="primary"
+              onClick={() => navigate(`/branch/shifts${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ""}`)}
+            >
+              Mở Ca &amp; két tiền để xác nhận →
             </Button>
             {effectiveBranchId ? (
               <Button

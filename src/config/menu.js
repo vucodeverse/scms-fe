@@ -55,10 +55,18 @@ export const POS_MENU = [
   },
 ];
 
-// Xây dựng menu quầy POS theo trạng thái mở khóa PIN, trạng thái ca, khóa bàn giao & chờ đóng ca sớm.
-// Thu ngân phải mở khóa PIN, kiểm két & mở ca (và không bị khóa bàn giao / đóng ca sớm) trước khi mở mục Gọi món (POS).
-export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPending = false, earlyClosePending = false } = {}) {
-  const canOpenPos = Boolean(unlocked && shiftOpen && !handoverPending && !earlyClosePending);
+// Xây dựng menu quầy POS theo trạng thái mở khóa PIN, trạng thái ca, khóa bàn giao & chờ đóng ca.
+// Thu ngân phải mở khóa PIN, kiểm két & mở ca (và không bị khóa bàn giao / đóng ca) trước khi mở mục Gọi món (POS).
+export function buildPosMenu({
+  unlocked = true,
+  shiftOpen = false,
+  handoverPending = false,
+  earlyClosePending = false,
+  managerClosePending = false,
+} = {}) {
+  const canOpenPos = Boolean(
+    unlocked && shiftOpen && !handoverPending && !earlyClosePending && !managerClosePending
+  );
   return [
     {
       group: "Quầy bán hàng",
@@ -74,17 +82,21 @@ export function buildPosMenu({ unlocked = true, shiftOpen = false, handoverPendi
               ? "PIN"
               : !shiftOpen
                 ? "Mở ca"
-                : earlyClosePending
-                  ? "Chờ đóng"
-                  : "Bàn giao"
+                : managerClosePending
+                  ? "Chờ nhận két"
+                  : earlyClosePending
+                    ? "Chờ đóng"
+                    : "Bàn giao"
             : undefined,
           disabledReason: !unlocked
             ? "Vui lòng nhập PIN mở khóa Thu ngân tại Ca & két tiền"
             : !shiftOpen
               ? "Vui lòng kiểm két & mở ca trước khi vào Gọi món (POS)"
-              : earlyClosePending
-                ? "Ca đang chờ Quản lý chi nhánh xác nhận đóng ca sớm tại Ca & két tiền"
-                : "Két tiền đang tạm khóa chờ người mới kiểm két nhận bàn giao giữa ca tại Ca & két tiền",
+              : managerClosePending
+                ? "Ca đã chốt kiểm két cuối ca và đang chờ Quản lý xác nhận nhận tiền / đóng ca tại Ca & két tiền"
+                : earlyClosePending
+                  ? "Ca đang chờ Quản lý chi nhánh xác nhận đóng ca sớm tại Ca & két tiền"
+                  : "Két tiền đang tạm khóa chờ người mới kiểm két nhận bàn giao giữa ca tại Ca & két tiền",
         },
         {
           key: "orders",

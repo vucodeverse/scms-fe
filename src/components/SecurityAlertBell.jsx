@@ -150,7 +150,7 @@ export default function SecurityAlertBell() {
               <div className="text-muted-scms" style={{ fontSize: 11 }}>
                 {summary.currentlyLockedCount > 0 || summary.activeCount > 0
                   ? `${summary.activeCount} cần xử lý${summary.currentlyLockedCount > 0 ? ` · ${summary.currentlyLockedCount} PIN đang khóa` : ""}`
-                  : "Theo dõi khóa PIN Kiosk & duyệt đóng ca sớm"}
+                  : "Theo dõi khóa PIN Kiosk, nhận két cuối ca & đóng ca sớm"}
               </div>
             </div>
             <div className="d-flex gap-1 align-items-center">
@@ -168,25 +168,37 @@ export default function SecurityAlertBell() {
             ) : (
               summary.items.map((item) => {
                 const isEarlyClose = item.alertType === "EARLY_SHIFT_CLOSE_REQUEST";
-                const remaining = !isEarlyClose && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
-                const isStillLocked = Boolean(!isEarlyClose && item.currentlyLocked && remaining);
+                const isManagerClose = item.alertType === "MANAGER_SHIFT_CLOSE_REQUEST";
+                const isShiftAlert = isEarlyClose || isManagerClose;
+                const remaining = !isShiftAlert && item.currentlyLocked ? formatRemaining(item.lockedUntil, nowMs) : null;
+                const isStillLocked = Boolean(!isShiftAlert && item.currentlyLocked && remaining);
                 const roleText = item.targetRole ? POSITION_LABELS[item.targetRole] || item.targetRole : null;
-                const canReviewEarlyClose = isEarlyClose && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
+                const canReviewShiftAlert = isShiftAlert && (item.status === "ACTIVE" || item.status === "ACKNOWLEDGED");
                 return (
                   <div
                     key={item.id}
-                    className={`alert-popover__item${item.status === "ACTIVE" || isStillLocked || canReviewEarlyClose ? " is-active" : ""}`}
+                    className={`alert-popover__item${item.status === "ACTIVE" || isStillLocked || canReviewShiftAlert ? " is-active" : ""}`}
                   >
                     <div className="d-flex justify-content-between align-items-start gap-2 mb-1">
                       <div style={{ fontWeight: 600, fontSize: 12.5, lineHeight: 1.35 }}>
-                        {isEarlyClose
-                          ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
-                          : item.targetUserName || `Kiosk ${item.branchName}`}
-                        {!isEarlyClose && roleText ? (
+                        {isManagerClose
+                          ? item.title || `Xác nhận nhận két cuối ca #${item.referenceShiftId || ""}`
+                          : isEarlyClose
+                            ? item.title || `Yêu cầu đóng ca sớm #${item.referenceShiftId || ""}`
+                            : item.targetUserName || `Kiosk ${item.branchName}`}
+                        {!isShiftAlert && roleText ? (
                           <span className="text-muted-scms fw-normal"> · {roleText}</span>
                         ) : null}
                       </div>
-                      {isEarlyClose ? (
+                      {isManagerClose ? (
+                        item.status === "APPROVED" ? (
+                          <StatusTag status="APPROVED" variant="success" label="Đã nhận két & đóng ca" />
+                        ) : item.status === "REJECTED" ? (
+                          <StatusTag status="REJECTED" variant="neutral" label="Đã trả lại ca" />
+                        ) : (
+                          <StatusTag status="MANAGER_CLOSE_PENDING" variant="warn" label="Chờ QL nhận két" />
+                        )
+                      ) : isEarlyClose ? (
                         item.status === "APPROVED" ? (
                           <StatusTag status="APPROVED" variant="success" label="Đã duyệt đóng ca" />
                         ) : item.status === "REJECTED" ? (
@@ -218,8 +230,8 @@ export default function SecurityAlertBell() {
                       ) : null}
                     </div>
 
-                    {isEarlyClose ? (
-                      canReviewEarlyClose ? (
+                    {isShiftAlert ? (
+                      canReviewShiftAlert ? (
                         <div className="d-flex gap-2">
                           <Button
                             size="sm"
