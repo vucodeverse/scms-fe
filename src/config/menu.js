@@ -12,7 +12,7 @@ export const APP_MENU = [
       { key: "orders", label: "Đơn hàng tại quầy", path: "/branch/orders", icon: "orders", permission: PERMISSIONS.ORDER_VIEW, roles: ["COO", "BRANCH_MANAGER"] },
       { key: "inventory", label: "Kho", path: "/branch/inventory", icon: "inventory", permission: PERMISSIONS.INVENTORY_MANAGE },
       { key: "branch-overview", label: "Tổng quan chi nhánh", path: "/branch/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
-      { key: "chain-overview", label: "Tổng quan chuỗi", path: "/chain/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW },
+      { key: "chain-overview", label: "Tổng quan chuỗi", path: "/chain/overview", icon: "dashboard", permission: PERMISSIONS.REPORT_VIEW, onlyRoles: ["COO"] },
     ],
   },
   {
@@ -29,7 +29,7 @@ export const APP_MENU = [
     ],
   },
   {
-    group: "Master data",
+    group: "Dữ Liệu",
     items: [
       { key: "branches", label: "Chi nhánh", path: "/chain/branches", icon: "branch", permission: PERMISSIONS.BRANCH_MANAGE },
       { key: "managers", label: "Tài khoản quản lý", path: "/chain/managers", icon: "user", permission: PERMISSIONS.MANAGER_MANAGE },

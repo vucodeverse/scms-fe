@@ -107,7 +107,9 @@ export default function App() {
                 pattern: "/chain/overview",
                 render: () => (
                   <RequireAuth>
-                    <RoleHomePage title="Tổng quan chuỗi" />
+                    <RequireRole roles={["COO"]}>
+                      <RoleHomePage title="Tổng quan chuỗi" />
+                    </RequireRole>
                   </RequireAuth>
                 ),
               },

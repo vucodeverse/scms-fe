@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Button, Col, Row } from "react-bootstrap";
+import { Button, Col, Row, Spinner } from "react-bootstrap";
 import KpiStrip from "../../components/KpiStrip.jsx";
 import StatusTag from "../../components/StatusTag.jsx";
 import SecurityAlertsPanel from "../../components/SecurityAlertsPanel.jsx";
+import { notifySecurityAlertsChanged } from "../../api/securityAlertsApi.js";
 import { RouteLink } from "../../router/HashRouter.jsx";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { reportsApi } from "../../api/reportsApi.js";
@@ -74,6 +75,11 @@ export default function BranchDashboardPage() {
     enabled: !unassignedManager && !needBranch,
   });
 
+  function handleRefresh() {
+    reload();
+    notifySecurityAlertsChanged();
+  }
+
   return (
     <ReportLayout
       title="Tổng quan chi nhánh"
@@ -82,10 +88,20 @@ export default function BranchDashboardPage() {
           ? `${data.branchName} · ngày ${formatDate(data.date)} · cập nhật lúc ${formatTime(data.generatedAt)}`
           : "Số liệu trong ngày của chi nhánh: doanh thu, đơn hàng, két tiền, tồn kho và chấm công."
       }
+      actions={
+        isBranchUser && !unassignedManager ? (
+          <Button variant="outline-secondary" onClick={handleRefresh} disabled={loading}>
+            {loading ? <Spinner size="sm" className="me-1" /> : null}
+            Làm mới
+          </Button>
+        ) : null
+      }
     >
-      <FilterBar onRefresh={reload} loading={loading}>
-        {!isBranchUser ? <BranchSelect branches={branches} value={branchId} onChange={setBranchId} /> : null}
-      </FilterBar>
+      {!isBranchUser ? (
+        <FilterBar onRefresh={handleRefresh} loading={loading}>
+          <BranchSelect branches={branches} value={branchId} onChange={setBranchId} />
+        </FilterBar>
+      ) : null}
 
       {!unassignedManager && !needBranch ? (
         <SecurityAlertsPanel branchId={isBranchUser ? undefined : branchId} />
