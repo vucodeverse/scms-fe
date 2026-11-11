@@ -11,6 +11,7 @@ import CategoriesTab from "./menu/CategoriesTab.jsx";
 import ProductsTab from "./menu/ProductsTab.jsx";
 import ToppingsTab from "./menu/ToppingsTab.jsx";
 import RecipeTab from "./menu/RecipeTab.jsx";
+import IngredientsTab from "./menu/IngredientsTab.jsx";
 
 // SCR-11 — Menu chuỗi. TAB-05 gồm Sản phẩm + Danh mục (FE-07/FE-08)
 // và Topping dùng chung (FE-09); TAB-06 Công thức (FE-10, chỉ đọc).
@@ -19,7 +20,7 @@ export default function MenuPage() {
   const menu = buildMenu(user);
   const { query, navigate } = useRouter();
   const [activeTab, setActiveTab] = useState(() =>
-    ["products", "categories", "toppings", "recipe"].includes(query.tab) ? query.tab : "products",
+    ["products", "categories", "toppings", "recipe", "ingredients"].includes(query.tab) ? query.tab : "products",
   );
 
   return (
@@ -61,6 +62,11 @@ export default function MenuPage() {
         <Tab eventKey="recipe" title="Công thức (BOM)">
           <div className="pt-3">
             <RecipeTab />
+          </div>
+        </Tab>
+        <Tab eventKey="ingredients" title="Nguyên vật liệu (Kho Tổng)">
+          <div className="pt-3">
+            <IngredientsTab />
           </div>
         </Tab>
       </Tabs>

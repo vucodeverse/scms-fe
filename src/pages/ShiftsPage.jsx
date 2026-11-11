@@ -657,7 +657,7 @@ export default function ShiftsPage() {
               ? "Theo dõi ca & két chi nhánh"
               : "Kiểm két & Ca làm việc"
         }
-        screenCode="SCR-08 · UC08 / UC24–27"
+        screenCode="SCR-08"
         description={
           isCashier
             ? "Thu ngân kiểm két đầu ca so với kết ca cũ, mở ca bán hàng và nhập tiền thực đếm cuối ca."

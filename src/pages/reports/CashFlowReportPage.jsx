@@ -44,7 +44,7 @@ export default function CashFlowReportPage() {
   return (
     <ReportLayout
       title="Báo cáo dòng tiền két"
-      screenCode="SCR-15 · UC37"
+      screenCode="SCR-15"
       description="Dòng tiền mặt thu/chi thực tế tại quầy theo từng ca và chênh lệch khi đối soát két."
       actions={<ExportButton type={REPORT_TYPES.CASH_FLOW} params={params} disabled={!data || data.empty || loading} />}
     >

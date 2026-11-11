@@ -4,7 +4,7 @@ Frontend của Smart Cafe Management System (SCMS) — bản cặp với backend
 (repo `vucodeverse/scms-be`, clone local ở thư mục kề bên: `../scms-be`).
 
 > **Trạng thái:** mới khởi tạo khung dự án + setup môi trường. Chưa code tính năng —
-> chờ tài liệu prototype và style guide bổ sung, code sẽ làm theo các tài liệu đó.
+> chờ tài liệu prototype vnpm à style guide bổ sung, code sẽ làm theo các tài liệu đó.
 
 ## Stack
 

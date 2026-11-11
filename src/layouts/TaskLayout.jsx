@@ -47,7 +47,7 @@ export default function TaskLayout({
           </button>
         ) : null}
         <div className="task-head__main">
-          {screenCode ? (
+          {screenCode && !String(screenCode).startsWith("SCR-") && !String(screenCode).startsWith("UC") ? (
             <div className="page-code">
               <span>{screenCode}</span>
               {codeLabel ? <b>{codeLabel}</b> : null}

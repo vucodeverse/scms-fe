@@ -4,15 +4,19 @@
 export default function PageHeader({ title, screenCode = null, description = null, actions = null }) {
   let codeMain = null;
   let codeBold = null;
-  if (screenCode) {
-    const parts = String(screenCode).split(" · ");
+  // Loại bỏ các mã kỹ thuật spec/prototype (SCR-xx, UCxx) để giao diện chuẩn doanh nghiệp
+  const cleanCode = screenCode && !String(screenCode).startsWith("SCR-") && !String(screenCode).startsWith("UC")
+    ? screenCode
+    : null;
+  if (cleanCode) {
+    const parts = String(cleanCode).split(" · ");
     codeMain = parts[0];
     codeBold = parts.slice(1).join(" · ") || null;
   }
   return (
     <div className="page-head">
       <div className="page-head__main">
-        {screenCode ? (
+        {cleanCode ? (
           <div className="page-code">
             <span>{codeMain}</span>
             {codeBold ? <b>{codeBold}</b> : null}

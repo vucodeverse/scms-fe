@@ -176,40 +176,51 @@ export default function InventoryPage() {
       userRole={roleLabel(user?.role)}
     >
       <PageHeader
-        title="Kho"
-        screenCode="SCR-14 · Kho"
-        description="Tồn kho nguyên liệu của chi nhánh, cảnh báo sắp hết và các phiếu nhập / xuất / hủy, kiểm kê."
+        title={user?.role === "COO" ? "Tồn kho các chi nhánh toàn chuỗi" : "Tồn kho chi nhánh"}
+        description={
+          user?.role === "COO"
+            ? "Giám sát mức tồn kho nguyên vật liệu của các chi nhánh để chủ động điều phối và phân bổ cung ứng từ Kho Tổng."
+            : "Theo dõi số lượng tồn kho nguyên vật liệu, định mức an toàn và thực hiện các nghiệp vụ xuất nhập, kiểm kê tại cửa hàng."
+        }
         actions={
           unassignedManager ? null : (
           <div className="d-flex gap-2 flex-wrap">
-            {!user?.branchId ? (
-              <Form.Select
-                value={branchId || ""}
-                onChange={(e) => {
-                  setBranchId(Number(e.target.value));
-                  setUiPage(1);
-                }}
-                style={{ minWidth: 210 }}
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.code} — {b.name}
-                  </option>
-                ))}
-              </Form.Select>
-            ) : null}
-            <Button variant="outline-primary" onClick={() => navigate("/branch/inventory/slip?type=receive")}>
-              Nhập kho
-            </Button>
-            <Button variant="outline-primary" onClick={() => navigate("/branch/inventory/slip?type=issue")}>
-              Xuất quầy bar
-            </Button>
-            <Button variant="outline-danger" onClick={() => navigate("/branch/inventory/slip?type=dispose")}>
-              Hủy hàng
-            </Button>
-            <Button variant="primary" onClick={() => navigate("/branch/inventory/stocktake")}>
-              Kiểm kê
-            </Button>
+            {user?.role === "COO" ? (
+              <>
+                <Form.Select
+                  value={branchId || ""}
+                  onChange={(e) => {
+                    setBranchId(Number(e.target.value));
+                    setUiPage(1);
+                  }}
+                  style={{ minWidth: 240 }}
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code} — {b.name}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Button variant="primary" onClick={() => navigate("/chain/requisitions/approve")}>
+                  Duyệt cấp hàng Kho Tổng
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline-primary" onClick={() => navigate("/branch/inventory/requisitions")}>
+                  Đơn xin cấp hàng
+                </Button>
+                <Button variant="outline-primary" onClick={() => navigate("/branch/inventory/slip?type=issue")}>
+                  Xuất ra quầy Bar
+                </Button>
+                <Button variant="outline-danger" onClick={() => navigate("/branch/inventory/slip?type=dispose")}>
+                  Xuất hủy sự cố
+                </Button>
+                <Button variant="primary" onClick={() => navigate("/branch/inventory/stocktake")}>
+                  Kiểm kê kho
+                </Button>
+              </>
+            )}
           </div>
           )
         }

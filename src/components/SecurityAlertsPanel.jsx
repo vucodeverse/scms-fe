@@ -32,6 +32,7 @@ export default function SecurityAlertsPanel({ branchId = null }) {
   const [summary, setSummary] = useState({ activeCount: 0, currentlyLockedCount: 0, items: [] });
   const [loading, setLoading] = useState(true);
   const [activeOnly, setActiveOnly] = useState(false);
+  const [showExpanded, setShowExpanded] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -104,6 +105,27 @@ export default function SecurityAlertsPanel({ branchId = null }) {
     }
   }
 
+  // Khi hệ thống hoàn toàn bình thường (không có PIN bị khóa, không có cảnh báo mới),
+  // hiển thị thanh trạng thái tinh gọn để không đẩy nội dung chính (KPI, doanh thu) xuống.
+  if (summary.currentlyLockedCount === 0 && summary.activeCount === 0 && !showExpanded) {
+    return (
+      <div className="d-flex align-items-center justify-content-between px-3 py-2 mb-3 bg-light border rounded small">
+        <div className="d-flex align-items-center gap-2 text-muted">
+          <span className="text-success fw-bold" style={{ fontSize: 16 }}>●</span>
+          <span>Bảo mật Kiosk &amp; PIN: Hệ thống hoạt động bình thường, không có mã PIN nào bị khóa.</span>
+        </div>
+        <Button
+          variant="link"
+          size="sm"
+          className="p-0 text-decoration-none text-muted small"
+          onClick={() => setShowExpanded(true)}
+        >
+          Xem lịch sử cảnh báo →
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <section className="scms-panel mb-3">
       <div
@@ -131,6 +153,11 @@ export default function SecurityAlertsPanel({ branchId = null }) {
         </div>
 
         <div className="d-flex align-items-center gap-2">
+          {summary.currentlyLockedCount === 0 && summary.activeCount === 0 ? (
+            <Button size="sm" variant="outline-secondary" onClick={() => setShowExpanded(false)}>
+              Thu gọn
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant={activeOnly ? "primary" : "outline-secondary"}

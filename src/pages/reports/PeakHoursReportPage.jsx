@@ -36,7 +36,7 @@ export default function PeakHoursReportPage() {
   return (
     <ReportLayout
       title="Báo cáo giờ cao điểm"
-      screenCode="SCR-15 · UC42"
+      screenCode="SCR-15"
       description="Số đơn theo từng khung giờ trong ngày (06:00–23:00). Cột đậm là khung giờ cao điểm."
       actions={<ExportButton type={REPORT_TYPES.PEAK_HOURS} params={params} disabled={!data || data.empty || loading} />}
     >

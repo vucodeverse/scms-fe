@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, Col, Row } from "react-bootstrap";
+import { Button, Col, Row, Spinner } from "react-bootstrap";
+import Icon from "../../components/Icon.jsx";
 import KpiStrip from "../../components/KpiStrip.jsx";
 import StatusTag from "../../components/StatusTag.jsx";
 import SecurityAlertsPanel from "../../components/SecurityAlertsPanel.jsx";
@@ -18,7 +19,7 @@ import {
 import { SHIFT_TYPE_LABELS, formatPercent, formatQty, useBranchOptions, useReport } from "../../components/reports/reportKit.js";
 
 function Change({ value }) {
-  if (value === null || value === undefined) return <span>so với hôm qua: —</span>;
+  if (value === null || value === undefined) return <span className="text-muted">Chưa có đối chiếu</span>;
   const n = Number(value);
   const sign = n > 0 ? "▲" : n < 0 ? "▼" : "•";
   return (
@@ -74,19 +75,28 @@ export default function BranchDashboardPage() {
     enabled: !unassignedManager && !needBranch,
   });
 
+  const refreshAction = (
+    <Button variant="outline-secondary" size="sm" onClick={reload} disabled={loading} className="d-flex align-items-center gap-1">
+      {loading ? <Spinner size="sm" /> : <Icon name="sync" size={14} />}
+      Làm mới dữ liệu
+    </Button>
+  );
+
   return (
     <ReportLayout
       title="Tổng quan chi nhánh"
-      screenCode="SCR-07 · UC34"
       description={
         data
           ? `${data.branchName} · ngày ${formatDate(data.date)} · cập nhật lúc ${formatTime(data.generatedAt)}`
           : "Số liệu trong ngày của chi nhánh: doanh thu, đơn hàng, két tiền, tồn kho và chấm công."
       }
+      actions={isBranchUser ? refreshAction : null}
     >
-      <FilterBar onRefresh={reload} loading={loading}>
-        {!isBranchUser ? <BranchSelect branches={branches} value={branchId} onChange={setBranchId} /> : null}
-      </FilterBar>
+      {!isBranchUser ? (
+        <FilterBar onRefresh={reload} loading={loading}>
+          <BranchSelect branches={branches} value={branchId} onChange={setBranchId} />
+        </FilterBar>
+      ) : null}
 
       {!unassignedManager && !needBranch ? (
         <SecurityAlertsPanel branchId={isBranchUser ? undefined : branchId} />
@@ -107,7 +117,7 @@ function DashboardBody({ data, reload }) {
           items={[
             { label: "Doanh thu hôm nay", value: formatVnd(sales.revenue), sub: <Change value={sales.revenueChangePercent} /> },
             { label: "Đơn đã thanh toán", value: formatNumber(sales.orderCount), sub: <Change value={sales.orderChangePercent} /> },
-            { label: "Giá trị TB / đơn", value: formatVnd(sales.averageOrderValue), sub: "Average order value" },
+            { label: "Giá trị TB / đơn", value: formatVnd(sales.averageOrderValue), sub: "Bình quân / đơn hàng" },
             { label: "Hôm qua", value: formatVnd(sales.yesterdayRevenue), sub: `${formatNumber(sales.yesterdayOrderCount)} đơn` },
           ]}
         />

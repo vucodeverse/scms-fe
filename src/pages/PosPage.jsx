@@ -11,7 +11,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { roleLabel } from "../auth/landing.js";
-import { buildPosMenu } from "../config/menu.js";
+import { buildMenu, buildPosMenu } from "../config/menu.js";
 import { formatNumber, formatVnd } from "../lib/format.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
@@ -86,11 +86,14 @@ export default function PosPage() {
   const redirectedRef = useRef(false);
 
   const effectiveBranchId = user?.branchId || branchId;
-  const menu = buildPosMenu({
-    unlocked: status === "authenticated" && Boolean(user),
-    shiftOpen: Boolean(shiftBanner?.open),
-    handoverPending: Boolean(shiftBanner?.handoverPending),
-  });
+  const menu =
+    user?.role === "CASHIER" || !user
+      ? buildPosMenu({
+          unlocked: status === "authenticated" && Boolean(user),
+          shiftOpen: Boolean(shiftBanner?.open),
+          handoverPending: Boolean(shiftBanner?.handoverPending),
+        })
+      : buildMenu(user);
 
   useEffect(() => {
     if (user?.branchId && branchId !== user.branchId) {

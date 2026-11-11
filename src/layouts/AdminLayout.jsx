@@ -12,12 +12,18 @@ export default function AdminLayout({
   userRole = null,
   children,
 }) {
-  const { path } = useRouter();
+  const { path, fullPath } = useRouter();
+  const currentUrl = fullPath || path;
   // Item active là item có path khớp dài nhất (tránh hai item cùng active
   // khi một path là tiền tố của path khác, ví dụ /_showcase và /_showcase/session).
   const allPaths = menu.flatMap((s) => s.items.map((i) => i.path));
   const bestMatch = allPaths
-    .filter((p) => path === p || path.startsWith(`${p}/`))
+    .filter((p) => {
+      if (p.includes("?")) {
+        return currentUrl === p;
+      }
+      return path === p || path.startsWith(`${p}/`);
+    })
     .sort((a, b) => b.length - a.length)[0];
 
   return (

@@ -22,6 +22,9 @@ import PosPage from "./pages/PosPage.jsx";
 import InventoryPage from "./pages/InventoryPage.jsx";
 import StockSlipPage from "./pages/StockSlipPage.jsx";
 import StocktakePage from "./pages/StocktakePage.jsx";
+import BranchRequisitionsPage from "./pages/BranchRequisitionsPage.jsx";
+import IngredientManagementPage from "./pages/IngredientManagementPage.jsx";
+import CooRequisitionApprovalPage from "./pages/CooRequisitionApprovalPage.jsx";
 import OrdersPage from "./pages/OrdersPage.jsx";
 import OrderDetailPage from "./pages/OrderDetailPage.jsx";
 import ShiftsPage from "./pages/ShiftsPage.jsx";
@@ -131,6 +134,16 @@ export default function App() {
                 render: () => <ShiftsPage />,
               },
               {
+                pattern: "/branch/inventory/requisitions",
+                render: () => (
+                  <RequireAuth>
+                    <RequireRole roles={["BRANCH_MANAGER", "COO"]}>
+                      <BranchRequisitionsPage />
+                    </RequireRole>
+                  </RequireAuth>
+                ),
+              },
+              {
                 pattern: "/branch/inventory/slip",
                 render: () => (
                   <RequireAuth>
@@ -167,6 +180,26 @@ export default function App() {
               {
                 pattern: "/branch/orders",
                 render: () => <OrdersPage />,
+              },
+              {
+                pattern: "/chain/ingredients",
+                render: () => (
+                  <RequireAuth>
+                    <RequireRole roles={["COO"]}>
+                      <IngredientManagementPage />
+                    </RequireRole>
+                  </RequireAuth>
+                ),
+              },
+              {
+                pattern: "/chain/requisitions/approve",
+                render: () => (
+                  <RequireAuth>
+                    <RequireRole roles={["COO"]}>
+                      <CooRequisitionApprovalPage />
+                    </RequireRole>
+                  </RequireAuth>
+                ),
               },
               {
                 pattern: "/chain/menu",

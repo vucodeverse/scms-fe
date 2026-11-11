@@ -38,7 +38,7 @@ export default function ProductSalesReportPage() {
   return (
     <ReportLayout
       title="Báo cáo sản phẩm"
-      screenCode="SCR-16 · UC41"
+      screenCode="SCR-16"
       description="Xếp hạng sản phẩm theo số lượng bán. Bán chậm bao gồm cả món chưa bán được ly nào trong kỳ."
       actions={<ExportButton type={REPORT_TYPES.PRODUCT_SALES} params={params} disabled={!data || data.empty || loading} />}
     >

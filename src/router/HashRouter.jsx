@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 // Đường dẫn dạng "#/chain/menu" -> path "/chain/menu".
 // Giữ ở tầng common để mọi màn hình dùng chung một cơ chế điều hướng.
 
-const RouterContext = createContext({ path: "/", query: {}, navigate: () => {} });
+const RouterContext = createContext({ path: "/", query: {}, fullPath: "/", navigate: () => {} });
 
 // Tách path và query: "#/chain/menu/edit?id=3" -> path "/chain/menu/edit",
 // query { id: "3" } — cùng quy ước điều hướng của prototype.
@@ -12,10 +12,10 @@ function parseHash() {
   const raw = window.location.hash.replace(/^#/, "");
   const full = !raw ? "/" : raw.startsWith("/") ? raw : `/${raw}`;
   const qIndex = full.indexOf("?");
-  if (qIndex < 0) return { path: full, query: {} };
+  if (qIndex < 0) return { path: full, query: {}, fullPath: full };
   const query = {};
   for (const [k, v] of new URLSearchParams(full.slice(qIndex + 1))) query[k] = v;
-  return { path: full.slice(0, qIndex) || "/", query };
+  return { path: full.slice(0, qIndex) || "/", query, fullPath: full };
 }
 
 function fullFromHash() {
@@ -43,7 +43,7 @@ export function HashRouter({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ path: route.path, query: route.query, navigate }),
+    () => ({ path: route.path, query: route.query, fullPath: route.fullPath, navigate }),
     [route, navigate],
   );
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;

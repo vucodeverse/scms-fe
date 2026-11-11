@@ -66,7 +66,7 @@ export default function FinancialReportPage() {
   return (
     <ReportLayout
       title="Báo cáo tài chính hợp nhất"
-      screenCode="SCR-16 · UC40"
+      screenCode="SCR-16"
       description="Doanh thu, giá vốn (công thức × số ly × đơn giá nguyên liệu) và lãi gộp theo chi nhánh và toàn chuỗi."
       actions={<ExportButton type={REPORT_TYPES.FINANCIAL} params={params} disabled={!data || data.empty || loading} />}
     >
