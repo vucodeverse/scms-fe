@@ -6,6 +6,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import SessionHeaderRight from "../components/SessionHeader.jsx";
 import StatusTag from "../components/StatusTag.jsx";
 import OrderPaymentPanel from "../components/OrderPaymentPanel.jsx";
+import ReceiptModal from "../components/ReceiptModal.jsx";
 import { ORDER_STATUS_META } from "./OrdersPage.jsx";
 import { useToast } from "../components/ToastContext.jsx";
 import { useAuth } from "../auth/AuthContext.jsx";
@@ -61,6 +62,7 @@ export default function OrderDetailPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   useEffect(() => {
     if (authStatus === "anonymous") {
@@ -216,6 +218,15 @@ export default function OrderDetailPage() {
             >
               Quay lại danh sách
             </Button>
+            {order?.status === "PAID" ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowReceiptModal(true)}
+              >
+                🧾 Xem &amp; in biên lai
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -413,7 +424,17 @@ export default function OrderDetailPage() {
                     }
                   }
                 }}
+                onShowReceipt={() => setShowReceiptModal(true)}
               />
+              {order.status === "PAID" ? (
+                <Button
+                  variant="primary"
+                  className="w-100 mt-3"
+                  onClick={() => setShowReceiptModal(true)}
+                >
+                  🧾 Xem lại biên lai thanh toán
+                </Button>
+              ) : null}
               {order.status === "PENDING" ? (
                 <>
                   <Button
@@ -466,6 +487,13 @@ export default function OrderDetailPage() {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Modal hiển thị & in biên lai hóa đơn */}
+      <ReceiptModal
+        show={showReceiptModal}
+        orderId={order?.id}
+        onHide={() => setShowReceiptModal(false)}
+      />
     </AdminLayout>
   );
 }
