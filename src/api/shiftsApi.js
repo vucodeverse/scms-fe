@@ -51,6 +51,36 @@ export const shiftsApi = {
     return http.post(`/shifts/${shiftId}/close`, payload);
   },
 
+  approveEarlyClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/early-close/approve`, payload);
+  },
+
+  rejectEarlyClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/early-close/reject`, payload);
+  },
+
+  approveManagerClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/manager-close/approve`, payload);
+  },
+
+  rejectManagerClose(shiftId, payload = {}) {
+    return http.post(`/shifts/${shiftId}/manager-close/reject`, payload);
+  },
+
+  preOpenCashIn(payload) {
+    return http.post("/shifts/pre-open-cash-in", payload);
+  },
+
+  cancelPreOpenCashIn(adjustmentId, reason) {
+    return http.delete(`/shifts/pre-open-cash-in/${adjustmentId}`, {
+      params: reason ? { reason } : undefined,
+    });
+  },
+
+  postCloseCashOut(payload) {
+    return http.post("/shifts/previous-closed/cash-out", payload);
+  },
+
   initiateHandover(shiftId, payload) {
     return http.post(`/shifts/${shiftId}/handover/initiate`, payload);
   },

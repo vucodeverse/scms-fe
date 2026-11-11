@@ -18,7 +18,7 @@ const MENU = [
     group: "Design system",
     items: [
       { key: "admin", label: "Admin shell + components", path: "/_showcase" },
-      { key: "session", label: "Phiên đăng nhập (FE-02)", path: "/_showcase/session" },
+      { key: "session", label: "Phiên đăng nhập", path: "/_showcase/session" },
       { key: "auth", label: "Auth shell", path: "/_showcase/auth" },
       { key: "kiosk", label: "Kiosk shell", path: "/_showcase/kiosk" },
       { key: "task", label: "Task shell", path: "/_showcase/task" },
@@ -83,8 +83,8 @@ export default function SessionShowcasePage() {
   }
 
   return (
-    <AdminLayout menu={MENU} branchName={user?.branchName || undefined} screenCode="FE-02">
-      <PageHeader title="Kiểm chứng phiên đăng nhập" screenCode="FE-02" description="Trang nội bộ kiểm chứng API client + phiên với backend local." />
+    <AdminLayout menu={MENU} branchName={user?.branchName || undefined}>
+      <PageHeader title="Kiểm chứng phiên đăng nhập" description="Trang nội bộ kiểm chứng API client và phiên làm việc." />
 
       <div className="scms-panel p-4 mb-4" style={{ maxWidth: 720 }}>
         <div className="d-flex align-items-center gap-3 mb-3">
@@ -106,7 +106,7 @@ export default function SessionShowcasePage() {
             </FormField>
             <Form.Check
               type="checkbox"
-              label="Ghi nhớ đăng nhập (bật để có refresh token — backend chỉ cấp refresh token khi rememberMe = true)"
+              label="Ghi nhớ đăng nhập (bật để duy trì phiên lâu dài bằng refresh token)"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
               className="mb-3"

@@ -7,6 +7,7 @@ import { useToast } from "../../components/ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { categoriesApi } from "../../api/categoriesApi.js";
 import { productsApi } from "../../api/productsApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 import { formatDateTime } from "../../lib/format.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
@@ -54,7 +55,7 @@ export default function CategoryDetailPage() {
       // trường đó) rồi ghép với danh sách sản phẩm theo categoryId.
       const [all, inCategory] = await Promise.all([
         categoriesApi.listAll(),
-        productsApi.list({ uiPage: 1, size: 100, categoryId }),
+        fetchAllPages((p) => productsApi.list({ ...p, categoryId })),
       ]);
       const row = all.find((c) => c.id === categoryId);
       if (!row) {
@@ -62,7 +63,7 @@ export default function CategoryDetailPage() {
         return;
       }
       setCategory(row);
-      setProducts(inCategory.items || []);
+      setProducts(inCategory || []);
     } catch (err) {
       toastRef.current.error(err.message || "Không tải được dữ liệu danh mục.");
     } finally {
@@ -119,7 +120,7 @@ export default function CategoryDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy danh mục" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
+      <TaskLayout title="Không tìm thấy danh mục" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Danh mục không tồn tại. Quay lại Menu & BOM.</span>
@@ -133,7 +134,6 @@ export default function CategoryDetailPage() {
     <TaskLayout
       title={category ? `Chi tiết danh mục · ${category.name}` : "Chi tiết danh mục"}
       subtitle="Hồ sơ danh mục và các sản phẩm đang thuộc danh mục."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu?tab=categories"
       meta={
@@ -263,7 +263,7 @@ export default function CategoryDetailPage() {
                 </p>
               ) : confirm === "soft" ? (
                 <p className="mb-0">
-                  Xoá mềm danh mục <strong>{category.name}</strong>? Backend thực hiện xoá mềm bằng cách
+                  Xoá mềm danh mục <strong>{category.name}</strong>? Hệ thống thực hiện xoá mềm bằng cách
                   chuyển danh mục sang trạng thái Ngừng hoạt động; sản phẩm thuộc danh mục không bị xoá
                   và không bị chuyển đi.
                 </p>

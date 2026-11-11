@@ -115,7 +115,14 @@ export default function ShiftHistoryTab({
       key: "openingCash",
       header: "Đầu ca",
       numeric: true,
-      render: (r) => formatVnd(r.openingCash),
+      render: (r) => (
+        <div>
+          <span>{formatVnd(r.openingCash)}</span>
+          {Number(r.preOpenCashIn || 0) > 0 ? (
+            <div className="small text-muted-scms">+{formatVnd(r.preOpenCashIn)} đầu ngày</div>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "cashRevenue",
@@ -161,7 +168,14 @@ export default function ShiftHistoryTab({
       header: "Trạng thái",
       render: (r) => {
         const meta = SHIFT_STATUS_META[r.status] || { label: r.status, variant: "neutral" };
-        return <StatusTag status={r.status} label={meta.label} variant={meta.variant} />;
+        return (
+          <div className="d-flex flex-column align-items-start gap-1">
+            <StatusTag status={r.status} label={meta.label} variant={meta.variant} />
+            {r.managerClosePending ? (
+              <StatusTag status="MANAGER_CLOSE_PENDING" variant="warn" label="Chờ QL nhận két" />
+            ) : null}
+          </div>
+        );
       },
     },
     {

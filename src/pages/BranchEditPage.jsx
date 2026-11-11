@@ -7,6 +7,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { branchesApi } from "../api/branchesApi.js";
 import { usersApi } from "../api/usersApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { BRANCH_STATUS_LABELS } from "../config/userConstants.js";
 
 const EMPTY_FORM = () => ({
@@ -45,21 +46,22 @@ export default function BranchEditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const unassignedReq = usersApi.list({
-        uiPage: 1,
-        size: 100,
-        role: "BRANCH_MANAGER",
-        status: "ACTIVE",
-        unassigned: true,
-      });
+      const unassignedReq = fetchAllPages((p) =>
+        usersApi.list({
+          ...p,
+          role: "BRANCH_MANAGER",
+          status: "ACTIVE",
+          unassigned: true,
+        }),
+      );
       if (!editingId) {
-        const pool = await unassignedReq;
-        setUnassignedManagers(pool.items || []);
+        const poolItems = await unassignedReq;
+        setUnassignedManagers(poolItems);
         setLoading(false);
         return;
       }
-      const [detail, pool] = await Promise.all([branchesApi.detail(editingId), unassignedReq]);
-      setUnassignedManagers(pool.items || []);
+      const [detail, poolItems] = await Promise.all([branchesApi.detail(editingId), unassignedReq]);
+      setUnassignedManagers(poolItems);
       setForm({
         code: detail.code || "",
         name: detail.name || "",
@@ -155,7 +157,7 @@ export default function BranchEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy chi nhánh" screenCode="SCR-13" codeLabel="Chi nhánh" backTo="/chain/branches">
+      <TaskLayout title="Không tìm thấy chi nhánh" codeLabel="Chi nhánh" backTo="/chain/branches">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Chi nhánh không tồn tại. Quay lại danh sách.</span>
@@ -169,7 +171,6 @@ export default function BranchEditPage() {
     <TaskLayout
       title={editingId ? `Sửa chi nhánh · ${form.code || ""}` : "Thêm chi nhánh"}
       subtitle="Hồ sơ vận hành và phân công quản lý phụ trách."
-      screenCode="SCR-13"
       codeLabel="Chi nhánh"
       backTo="/chain/branches"
       meta={

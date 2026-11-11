@@ -8,6 +8,7 @@ import { useRouter } from "../router/HashRouter.jsx";
 import { vouchersApi } from "../api/vouchersApi.js";
 import { productsApi } from "../api/productsApi.js";
 import { categoriesApi } from "../api/categoriesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
 
@@ -73,11 +74,11 @@ export default function VoucherEditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [productPage, categoryList] = await Promise.all([
-        productsApi.list({ uiPage: 1, size: 100 }),
+      const [productItems, categoryList] = await Promise.all([
+        fetchAllPages((p) => productsApi.list(p)),
         categoriesApi.listAll(),
       ]);
-      setProducts(productPage.items || []);
+      setProducts(productItems || []);
       setCategories(categoryList || []);
       if (editingId) {
         const detail = await vouchersApi.detail(editingId);
@@ -158,7 +159,6 @@ export default function VoucherEditPage() {
     return (
       <TaskLayout
         title="Không tìm thấy voucher"
-        screenCode="SCR-12"
         codeLabel="Khuyến mãi & Voucher"
         backTo="/chain/vouchers"
       >
@@ -175,7 +175,6 @@ export default function VoucherEditPage() {
     <TaskLayout
       title={editingId ? `Sửa voucher · ${form.code || ""}` : "Thêm voucher"}
       subtitle="Điều kiện áp dụng, thời gian hiệu lực và phạm vi áp dụng."
-      screenCode="SCR-12"
       codeLabel="Khuyến mãi & Voucher"
       backTo="/chain/vouchers"
       meta={
@@ -207,7 +206,7 @@ export default function VoucherEditPage() {
             {locked ? (
               <div className="notice notice--warn mb-3">
                 <span>
-                  Voucher đã có <strong>{usedCount} lượt dùng</strong> — backend không cho phép sửa voucher
+                  Voucher đã có <strong>{usedCount} lượt dùng</strong> — hệ thống không cho phép sửa voucher
                   đã được sử dụng. Có thể ngừng hoạt động hoặc tạo voucher mới.
                 </span>
               </div>

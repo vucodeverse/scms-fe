@@ -7,6 +7,7 @@ import { useToast } from "../../components/ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { categoriesApi } from "../../api/categoriesApi.js";
 import { productsApi } from "../../api/productsApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
 
@@ -40,11 +41,13 @@ export default function CategoryEditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [productsPage, inCategory] = await Promise.all([
-        productsApi.list({ uiPage: 1, size: 100 }),
-        isEdit ? productsApi.list({ uiPage: 1, size: 100, categoryId: editingId }) : Promise.resolve(null),
+      const [productItems, inCategoryItems] = await Promise.all([
+        fetchAllPages((p) => productsApi.list(p)),
+        isEdit
+          ? fetchAllPages((p) => productsApi.list({ ...p, categoryId: editingId }))
+          : Promise.resolve(null),
       ]);
-      setAllProducts(productsPage.items || []);
+      setAllProducts(productItems || []);
       if (isEdit) {
         // DTO chi tiết của backend không có status — lấy từ dòng
         // danh sách như CategoryDetailPage.
@@ -60,7 +63,7 @@ export default function CategoryEditPage() {
         setDescription(row.description || "");
         setSortOrder(row.sortOrder);
         setStatus(row.status);
-        setCheckedIds(new Set((inCategory.items || []).map((p) => p.id)));
+        setCheckedIds(new Set((inCategoryItems || []).map((p) => p.id)));
       } else {
         const all = await categoriesApi.listAll();
         setSortOrder(all.length + 1);
@@ -118,7 +121,7 @@ export default function CategoryEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy danh mục" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
+      <TaskLayout title="Không tìm thấy danh mục" codeLabel="Menu & BOM" backTo="/chain/menu?tab=categories">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Danh mục không tồn tại. Quay lại Menu & BOM.</span>
@@ -132,7 +135,6 @@ export default function CategoryEditPage() {
     <TaskLayout
       title={isEdit ? `Sửa danh mục · ${name || code}` : "Thêm danh mục"}
       subtitle="Tên, thứ tự hiển thị trên menu và các sản phẩm thuộc danh mục."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo={isEdit ? `/chain/menu/category-detail?id=${editingId}` : "/chain/menu?tab=categories"}
       meta={

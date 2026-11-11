@@ -14,7 +14,9 @@ import { buildMenu, buildPosMenu } from "../config/menu.js";
 import { formatVnd, formatDateTime } from "../lib/format.js";
 import { ordersApi } from "../api/ordersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { shiftsApi } from "../api/shiftsApi.js";
+import { SHIFT_TYPE_META } from "../components/shifts/shiftUtils.js";
 
 export const ORDER_STATUS_META = {
   PENDING: { label: "Chờ thanh toán", variant: "warn" },
@@ -39,12 +41,33 @@ export default function OrdersPage() {
   const { navigate } = useRouter();
   const { user, status: authStatus } = useAuth();
   const toast = useToast();
-  const [shiftState, setShiftState] = useState({ open: false, handoverPending: false });
+  const [shiftState, setShiftState] = useState({
+    open: false,
+    handoverPending: false,
+    earlyClosePending: false,
+    managerClosePending: false,
+    shiftId: null,
+    shiftType: null,
+  });
+  const isManagerRole = user?.role === "COO" || user?.role === "BRANCH_MANAGER";
+  const isCashierScope = Boolean(user && !isManagerRole);
   const menu =
     !user || authStatus !== "authenticated"
-      ? buildPosMenu({ unlocked: false, shiftOpen: false, handoverPending: false })
-      : user.role === "CASHIER"
-        ? buildPosMenu({ unlocked: true, shiftOpen: shiftState.open, handoverPending: shiftState.handoverPending })
+      ? buildPosMenu({
+          unlocked: false,
+          shiftOpen: false,
+          handoverPending: false,
+          earlyClosePending: false,
+          managerClosePending: false,
+        })
+      : isCashierScope
+        ? buildPosMenu({
+            unlocked: true,
+            shiftOpen: shiftState.open,
+            handoverPending: shiftState.handoverPending,
+            earlyClosePending: shiftState.earlyClosePending,
+            managerClosePending: shiftState.managerClosePending,
+          })
         : buildMenu(user);
   const unassignedManager = isUnassignedBranchManager(user);
   const toastRef = useRef(toast);
@@ -73,8 +96,8 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (authStatus === "authenticated" && user && !unassignedManager && !user?.branchId) {
-      branchesApi.list({ uiPage: 1, size: 100 })
-        .then((res) => setBranches(res.items || []))
+      fetchAllPages((p) => branchesApi.list(p))
+        .then((items) => setBranches(items))
         .catch(() => {});
     }
   }, [authStatus, user, unassignedManager, user?.branchId]);
@@ -88,12 +111,26 @@ export default function OrdersPage() {
   const effectiveBranchId = user?.branchId || (selectedBranchId ? Number(selectedBranchId) : undefined);
 
   useEffect(() => {
+    if (user?.branchId) {
+      setSelectedBranchId((prev) => (prev === user.branchId ? prev : user.branchId));
+    }
+  }, [user?.branchId]);
+
+  useEffect(() => {
     if (
       authStatus !== "authenticated" ||
-      (user?.role !== "CASHIER" && user?.role !== "BRANCH_MANAGER") ||
+      !user ||
+      user.role === "COO" ||
       !effectiveBranchId
     ) {
-      setShiftState({ open: false, handoverPending: false });
+      setShiftState({
+        open: false,
+        handoverPending: false,
+        earlyClosePending: false,
+        managerClosePending: false,
+        shiftId: null,
+        shiftType: null,
+      });
       return;
     }
     shiftsApi
@@ -102,10 +139,23 @@ export default function OrdersPage() {
         setShiftState({
           open: true,
           handoverPending: Boolean(sum?.shift?.handoverPending),
+          earlyClosePending: Boolean(sum?.shift?.earlyClosePending),
+          managerClosePending: Boolean(sum?.shift?.managerClosePending),
+          shiftId: sum?.shift?.id || null,
+          shiftType: sum?.shift?.shiftType || null,
         }),
       )
-      .catch(() => setShiftState({ open: false, handoverPending: false }));
-  }, [authStatus, user?.role, effectiveBranchId]);
+      .catch(() =>
+        setShiftState({
+          open: false,
+          handoverPending: false,
+          earlyClosePending: false,
+          managerClosePending: false,
+          shiftId: null,
+          shiftType: null,
+        }),
+      );
+  }, [authStatus, user, effectiveBranchId]);
 
   const load = useCallback(async () => {
     if (authStatus !== "authenticated" || !user) return;
@@ -167,6 +217,7 @@ export default function OrdersPage() {
           },
         ]
       : []),
+    { key: "shiftId", header: "Ca", render: (r) => (r.shiftId ? <span className="mono">#{r.shiftId}</span> : "—") },
     { key: "createdAt", header: "Thời gian", render: (r) => formatDateTime(r.createdAt) },
     { key: "cashierId", header: "Thu ngân", render: (r) => (r.cashierId ? `NV #${r.cashierId}` : "—") },
     { key: "totalAmount", header: "Tổng tiền", numeric: true, render: (r) => formatVnd(r.totalAmount) },
@@ -193,7 +244,7 @@ export default function OrdersPage() {
             if (val) localStorage.setItem("scms_pos_branch_id", String(val));
             setUiPage(1);
           }}
-          style={{ maxWidth: 190 }}
+          style={{ width: "auto", minWidth: 190 }}
         >
           <option value="">Tất cả chi nhánh</option>
           {branches.map((b) => (
@@ -209,7 +260,7 @@ export default function OrdersPage() {
         onChange={(e) => setKeyword(e.target.value)}
         style={{ maxWidth: 220 }}
       />
-      <Form.Select value={status} onChange={(e) => { setStatus(e.target.value); setUiPage(1); }} style={{ maxWidth: 190 }}>
+      <Form.Select value={status} onChange={(e) => { setStatus(e.target.value); setUiPage(1); }} style={{ width: "auto", minWidth: 185 }}>
         <option value="">Mọi trạng thái</option>
         {Object.entries(ORDER_STATUS_META).map(([k, v]) => (
           <option key={k} value={k}>
@@ -235,12 +286,23 @@ export default function OrdersPage() {
     >
       <PageHeader
         title="Đơn hàng"
-        screenCode="SCR-05 · Đơn hàng"
-        description="Đơn bán tại quầy của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
+        description={
+          isCashierScope
+            ? "Đơn bán tại quầy thuộc ca làm việc đang mở của chi nhánh. Mở một đơn để thanh toán, áp voucher hoặc hủy đơn."
+            : "Toàn bộ đơn bán tại quầy qua các ca làm việc. Mở một đơn để thanh toán, áp voucher hoặc xem chi tiết."
+        }
         actions={
-          unassignedManager || authStatus !== "authenticated" ? null : user?.role === "CASHIER" && !shiftState.open ? (
+          unassignedManager || authStatus !== "authenticated" ? null : isCashierScope && !shiftState.open ? (
             <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
               Kiểm két &amp; Mở ca →
+            </Button>
+          ) : shiftState.managerClosePending ? (
+            <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
+              Chờ QL nhận két →
+            </Button>
+          ) : shiftState.earlyClosePending ? (
+            <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
+              Chờ duyệt đóng ca →
             </Button>
           ) : shiftState.handoverPending ? (
             <Button variant="primary" onClick={() => navigate("/branch/shifts")}>
@@ -253,7 +315,25 @@ export default function OrdersPage() {
           )
         }
       />
-      {shiftState.handoverPending ? (
+      {shiftState.managerClosePending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Ca đã bàn giao két cuối ca chờ Quản lý xác nhận:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi Quản lý xác nhận nhận két hoặc trả lại ca.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : shiftState.earlyClosePending ? (
+        <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+          <span>
+            <strong>Đang chờ Quản lý xác nhận đóng ca sớm:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi Quản lý duyệt đóng ca hoặc hủy yêu cầu.
+          </span>
+          <Button size="sm" variant="outline-secondary" onClick={() => navigate("/branch/shifts")}>
+            Mở Ca &amp; két tiền →
+          </Button>
+        </div>
+      ) : shiftState.handoverPending ? (
         <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
           <span>
             <strong>Đang tạm khóa POS chờ bàn giao két giữa ca:</strong> Tạm dừng tạo đơn mới, thanh toán và hoàn tiền tại quầy cho đến khi người nhận xác nhận kiểm két.
@@ -262,6 +342,27 @@ export default function OrdersPage() {
             Mở Ca &amp; két tiền →
           </Button>
         </div>
+      ) : null}
+      {authStatus === "authenticated" && !unassignedManager && isCashierScope ? (
+        !shiftState.open ? (
+          <div className="notice notice--warn mb-3">
+            <strong>!</strong>
+            <span>
+              <strong>Chi nhánh chưa mở ca làm việc:</strong> Thu ngân chỉ xem được các đơn hàng phát sinh trong ca hiện tại sau khi kiểm két &amp; mở ca (không xem đơn của các ca trước).
+            </span>
+          </div>
+        ) : !shiftState.handoverPending && !shiftState.earlyClosePending && !shiftState.managerClosePending ? (
+          <div className="notice mb-3">
+            <strong>i</strong>
+            <span>
+              <strong>Phạm vi ca hiện tại:</strong> Chỉ hiển thị các đơn hàng thuộc{" "}
+              <strong>
+                {SHIFT_TYPE_META[shiftState.shiftType]?.label || "ca đang mở"} #{shiftState.shiftId}
+              </strong>
+              . Chỉ Quản lý chi nhánh hoặc COO mới xem được toàn bộ đơn các ca trước.
+            </span>
+          </div>
+        ) : null
       ) : null}
       {authStatus !== "authenticated" ? (
         <div className="text-center py-5">

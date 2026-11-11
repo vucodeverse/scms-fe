@@ -9,6 +9,7 @@ import { formatDate, formatDateTime, formatVnd } from "../../lib/format.js";
 import {
   CASH_TX_META,
   HANDOVER_STATUS_META,
+  HANDOVER_TYPE_META,
   SHIFT_STATUS_META,
   SHIFT_TYPE_META,
   actorName,
@@ -119,8 +120,14 @@ export default function ShiftDetailModal({
               : `Chi tiết ca #${shiftId || ""}`}
           </Modal.Title>
           {statusMeta ? <StatusTag status={shift.status} label={statusMeta.label} variant={statusMeta.variant} /> : null}
+          {shift?.managerClosePending ? (
+            <StatusTag status="MANAGER_CLOSE_PENDING" label="Chờ QL nhận két" variant="warn" />
+          ) : null}
+          {shift?.earlyClosePending ? (
+            <StatusTag status="EARLY_CLOSE_PENDING" label="Chờ duyệt đóng ca sớm" variant="warn" />
+          ) : null}
           {shift?.handoverPending ? (
-            <StatusTag status="PENDING_RECEIVE" label="Chờ bàn giao két" variant="warn" />
+            <StatusTag status="PENDING_RECEIVE" label="Chờ bàn giao giữa ca" variant="warn" />
           ) : null}
         </div>
       </Modal.Header>
@@ -161,10 +168,22 @@ export default function ShiftDetailModal({
                       </strong>
                     </div>
                   ) : null}
-                  {shift.previousShiftId || shift.previousClosingCash !== null && shift.previousClosingCash !== undefined ? (
+                  {shift.previousShiftId || (shift.previousClosingCash !== null && shift.previousClosingCash !== undefined) || Number(shift.preOpenCashIn || 0) > 0 ? (
                     <div className="mt-1">
-                      <span className="text-muted-scms">Kết ca trước{shift.previousShiftId ? ` (#${shift.previousShiftId})` : ""}: </span>
-                      <strong>{formatVnd(shift.previousClosingCash)}</strong>
+                      <span className="text-muted-scms">
+                        {shift.previousShiftId || (shift.previousClosingCash !== null && shift.previousClosingCash !== undefined)
+                          ? `Kết ca trước${shift.previousShiftId ? ` (#${shift.previousShiftId})` : ""}: `
+                          : "Mở ca đầu tiên · "}
+                      </span>
+                      {shift.previousClosingCash !== null && shift.previousClosingCash !== undefined ? (
+                        <strong>{formatVnd(shift.previousClosingCash)}</strong>
+                      ) : null}
+                      {Number(shift.preOpenCashIn || 0) > 0 ? (
+                        <span className="ms-1">
+                          {shift.previousClosingCash !== null && shift.previousClosingCash !== undefined ? "+ " : ""}
+                          Nạp đầu ngày <strong>{formatVnd(shift.preOpenCashIn)}</strong>
+                        </span>
+                      ) : null}
                       {openingVariance !== null ? (
                         <span className="ms-1">
                           ({hasOpeningVariance ? `Chênh đầu ca ${formatSignedVnd(openingVariance)}` : "Khớp khi mở ca"})
@@ -200,12 +219,43 @@ export default function ShiftDetailModal({
                   <span>{shift.discrepancyReason}</span>
                 </div>
               ) : null}
+              {(shift.earlyClosePending || shift.earlyCloseRequestedBy || shift.earlyCloseReason) ? (
+                <div className={`notice mt-2 ${shift.earlyClosePending ? "notice--warn" : ""}`}>
+                  <strong>{shift.earlyClosePending ? "!" : "i"}</strong>
+                  <span>
+                    <strong>
+                      {shift.earlyClosePending ? "Đang chờ duyệt đóng ca sớm:" : "Thông tin xin đóng ca sớm:"}
+                    </strong>{" "}
+                    {shift.earlyCloseRequestedBy ? (
+                      <>
+                        Thu ngân <strong>{shift.earlyCloseRequestedByName || actorName(shift.earlyCloseRequestedBy, resolvedEmployeeMap)}</strong>
+                      </>
+                    ) : null}
+                    {shift.earlyCloseRequestedAt ? (
+                      <> · gửi lúc <strong>{formatDateTime(shift.earlyCloseRequestedAt)}</strong></>
+                    ) : null}
+                    {shift.earlyCloseCountedCash !== null && shift.earlyCloseCountedCash !== undefined ? (
+                      <> · thực đếm khai báo: <strong>{formatVnd(shift.earlyCloseCountedCash)}</strong></>
+                    ) : null}
+                    {shift.earlyCloseReason ? (
+                      <> · Lý do: <em>{shift.earlyCloseReason}</em></>
+                    ) : null}
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div className="mb-3">
               <KpiStrip
                 items={[
-                  { label: "Đầu ca", value: formatVnd(summary.openingCash) },
+                  {
+                    label: "Đầu ca",
+                    value: formatVnd(summary.openingCash),
+                    sub:
+                      Number(shift.preOpenCashIn || 0) > 0
+                        ? `Nạp trước mở ca: +${formatVnd(shift.preOpenCashIn)}`
+                        : undefined,
+                  },
                   { label: "Thu tiền mặt", value: formatVnd(summary.cashRevenue) },
                   { label: "Chuyển khoản QR", value: formatVnd(summary.transferRevenue) },
                   { label: "Nạp / Rút", value: formatVnd(summary.totalCashIn), sub: `Rút: ${formatVnd(summary.totalCashOut)} · Hoàn: ${formatVnd(summary.totalRefundOut)}` },
@@ -267,7 +317,7 @@ export default function ShiftDetailModal({
             {summary.handovers?.length > 0 ? (
               <div className="mb-3">
                 <div className="text-muted-scms mb-2" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                  Lịch sử bàn giao két giữa ca ({summary.handovers.length})
+                  Lịch sử bàn giao két ({summary.handovers.length})
                 </div>
                 <div className="scms-panel">
                   <div className="table-responsive">
@@ -275,7 +325,7 @@ export default function ShiftDetailModal({
                       <thead>
                         <tr>
                           <th>Thời gian</th>
-                          <th>Giao → Nhận</th>
+                          <th>Loại / Giao → Nhận</th>
                           <th className="num">Kiểm giao / Nhận</th>
                           <th>Đối soát</th>
                           <th>Lý do / Ghi chú</th>
@@ -285,6 +335,9 @@ export default function ShiftDetailModal({
                       <tbody>
                         {summary.handovers.map((h) => {
                           const hMeta = HANDOVER_STATUS_META[h.status] || { label: h.status, variant: "neutral" };
+                          const typeInfo = HANDOVER_TYPE_META[h.handoverType] || HANDOVER_TYPE_META.MID_SHIFT;
+                          const isManagerClose = h.handoverType === "MANAGER_CLOSE";
+                          const withdrawVal = Number(h.withdrawAmount || 0);
                           const hasOutVar =
                             h.outgoingVariance !== null &&
                             h.outgoingVariance !== undefined &&
@@ -306,11 +359,19 @@ export default function ShiftDetailModal({
                                 ) : null}
                               </td>
                               <td className="small">
+                                <div className="mb-1">
+                                  <StatusTag status={h.handoverType || "MID_SHIFT"} variant={typeInfo.variant} label={typeInfo.label} />
+                                </div>
                                 <div>
                                   <strong>{h.fromUserName || actorName(h.fromUserId, resolvedEmployeeMap)}</strong>
                                   {" → "}
                                   <strong>
-                                    {h.toUserName || (h.toUserId ? actorName(h.toUserId, resolvedEmployeeMap) : "Chờ nhận")}
+                                    {h.toUserName ||
+                                      (h.toUserId
+                                        ? actorName(h.toUserId, resolvedEmployeeMap)
+                                        : isManagerClose
+                                          ? "Chờ Quản lý nhận"
+                                          : "Chờ nhận")}
                                   </strong>
                                 </div>
                                 {h.cancelledByName ? (
@@ -326,6 +387,16 @@ export default function ShiftDetailModal({
                                   <div>
                                     Nhận: <strong>{formatVnd(h.incomingCountedCash)}</strong>
                                   </div>
+                                ) : null}
+                                {withdrawVal > 0 ? (
+                                  <>
+                                    <div className="text-muted-scms">Rút cất két: −{formatVnd(withdrawVal)}</div>
+                                    {hasInCash ? (
+                                      <div>
+                                        Lưu két: <strong>{formatVnd(Number(h.incomingCountedCash) - withdrawVal)}</strong>
+                                      </div>
+                                    ) : null}
+                                  </>
                                 ) : null}
                               </td>
                               <td className="small">
@@ -349,6 +420,9 @@ export default function ShiftDetailModal({
                                 ) : null}
                                 {h.incomingNote ? (
                                   <div className="text-muted-scms">Nhận: {h.incomingNote}</div>
+                                ) : null}
+                                {h.withdrawReason ? (
+                                  <div className="text-muted-scms">Rút cất két: {h.withdrawReason}</div>
                                 ) : null}
                                 {h.cancelReason ? (
                                   <div className="text-muted-scms">Hủy: {h.cancelReason}</div>

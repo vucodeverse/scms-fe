@@ -23,9 +23,7 @@ function InfoRow({ label, children }) {
 
 // TAB-05 — Chi tiết món (FE-13). Mọi thao tác (Sửa, Xoá mềm, Xóa
 // hẳn) nằm ở trang này; tab danh sách chỉ còn bấm vào tên món để mở
-// chi tiết. Dữ liệu ghép từ dòng danh sách + GET sizes + GET recipe
-// (không gọi GET /products/{id} vì endpoint đó lỗi 500 trên môi
-// trường chưa có bảng recipe — xem FE-09).
+// chi tiết. Dữ liệu đọc từ GET /products/{id} + sizes + recipe.
 export default function ProductDetailPage() {
   const { query, navigate } = useRouter();
   const toast = useToast();
@@ -50,27 +48,24 @@ export default function ProductDetailPage() {
     }
     setLoading(true);
     try {
-      const page = await productsApi.list({ uiPage: 1, size: 100 });
-      const row = (page.items || []).find((p) => p.id === productId);
-      if (!row) {
-        setNotFound(true);
-        return;
-      }
-      setProduct(row);
+      const detail = await productsApi.detail(productId);
+      setProduct(detail);
       const [sizeList, recipe] = await Promise.allSettled([
         productsApi.listSizes(productId),
         productsApi.recipe(productId),
       ]);
-      setSizes(sizeList.status === "fulfilled" ? sizeList.value || [] : row.sizes || []);
+      setSizes(sizeList.status === "fulfilled" ? sizeList.value || [] : detail.sizes || []);
       if (recipe.status === "fulfilled") {
-        setRecipeLines(Array.isArray(recipe.value) ? recipe.value : []);
+        const items = Array.isArray(recipe.value) ? recipe.value : recipe.value?.items || detail.recipe || [];
+        setRecipeLines(items);
         setRecipeError(false);
       } else {
-        setRecipeLines([]);
-        setRecipeError(true);
+        setRecipeLines(detail.recipe || []);
+        setRecipeError(detail.recipe == null);
       }
     } catch (err) {
-      toastRef.current.error(err.message || "Không tải được dữ liệu sản phẩm.");
+      if (err.status === 404) setNotFound(true);
+      else toastRef.current.error(err.message || "Không tải được dữ liệu sản phẩm.");
     } finally {
       setLoading(false);
     }
@@ -104,7 +99,7 @@ export default function ProductDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy sản phẩm" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu">
+      <TaskLayout title="Không tìm thấy sản phẩm" codeLabel="Menu & BOM" backTo="/chain/menu">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Sản phẩm không tồn tại. Quay lại menu.</span>
@@ -122,7 +117,6 @@ export default function ProductDetailPage() {
     <TaskLayout
       title={product ? `Chi tiết món · ${product.name}` : "Chi tiết món"}
       subtitle="Thông tin món, giá theo size, topping áp dụng và công thức."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu"
       meta={

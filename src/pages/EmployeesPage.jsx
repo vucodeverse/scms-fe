@@ -15,6 +15,7 @@ import { buildMenu } from "../config/menu.js";
 import { POSITION_LABELS, USER_STATUS_LABELS } from "../config/userConstants.js";
 import { usersApi } from "../api/usersApi.js";
 import { branchesApi } from "../api/branchesApi.js";
+import { fetchAllPages } from "../api/paging.js";
 
 export { POSITION_LABELS };
 
@@ -48,9 +49,8 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (!isCoo) return;
-    branchesApi
-      .list({ uiPage: 1, size: 100, sortBy: "name", sortDir: "ASC" })
-      .then((r) => setBranches(r.items || []))
+    fetchAllPages((p) => branchesApi.list({ ...p, sortBy: "name", sortDir: "ASC" }))
+      .then((items) => setBranches(items))
       .catch(() => setBranches([]));
   }, [isCoo]);
 
@@ -127,7 +127,13 @@ export default function EmployeesPage() {
       header: "PIN / thẻ",
       render: (r) => (
         <>
-          <div>{r.hasPin ? "PIN ••••" : "Chưa có PIN"}</div>
+          <div>
+            {r.roleCode === "COO" || r.roleCode === "BRANCH_MANAGER"
+              ? "Không dùng PIN"
+              : r.hasPin
+                ? "PIN ••••"
+                : "Chưa có PIN"}
+          </div>
           <div className="mono" style={{ color: "var(--muted)", fontSize: 11.5 }}>
             {r.cardCode || "Chưa có thẻ"}
           </div>
@@ -185,7 +191,6 @@ export default function EmployeesPage() {
     >
       <PageHeader
         title="Hồ sơ nhân sự"
-        screenCode="SCR-09 · TAB-03"
         description="Quản lý hồ sơ, vai trò, PIN và thẻ RFID của nhân viên tại chi nhánh."
         actions={
           unassignedManager ? null : (

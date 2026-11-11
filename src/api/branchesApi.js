@@ -18,16 +18,18 @@ export const branchesApi = {
     const page = await http.get("/branches", { params });
     return normalizePage(page);
   },
-  async publicList({ uiPage = 1, size = 100, keyword, status, sortBy = "code", sortDir = "ASC" } = {}) {
-    const params = buildListParams({
-      uiPage,
-      size,
-      sortBy,
-      sortDir,
-      filters: { keyword, status },
+  async publicList({ keyword } = {}) {
+    const res = await publicHttp.get("/auth/branches", {
+      params: keyword ? { keyword } : {},
     });
-    const page = await publicHttp.get("/branches", { params });
-    return normalizePage(page);
+    const items = Array.isArray(res) ? res : res?.items || res?.content || [];
+    return {
+      items,
+      uiPage: 1,
+      size: items.length,
+      totalItems: items.length,
+      totalPages: 1,
+    };
   },
   detail(id) {
     return http.get(`/branches/${id}`);

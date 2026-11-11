@@ -9,6 +9,7 @@ import { useToast } from "../components/ToastContext.jsx";
 import { useRouter } from "../router/HashRouter.jsx";
 import { branchesApi } from "../api/branchesApi.js";
 import { usersApi } from "../api/usersApi.js";
+import { fetchAllPages } from "../api/paging.js";
 import { formatDateTime } from "../lib/format.js";
 import { BRANCH_STATUS_LABELS } from "../config/userConstants.js";
 
@@ -48,11 +49,13 @@ export default function BranchDetailPage() {
       const detail = await branchesApi.detail(branchId);
       setBranch(detail);
       const [assignedRes, unassignedRes] = await Promise.allSettled([
-        usersApi.list({ uiPage: 1, size: 50, role: "BRANCH_MANAGER", branchId }),
-        usersApi.list({ uiPage: 1, size: 100, role: "BRANCH_MANAGER", status: "ACTIVE", unassigned: true }),
+        fetchAllPages((p) => usersApi.list({ ...p, role: "BRANCH_MANAGER", branchId })),
+        fetchAllPages((p) =>
+          usersApi.list({ ...p, role: "BRANCH_MANAGER", status: "ACTIVE", unassigned: true }),
+        ),
       ]);
-      if (assignedRes.status === "fulfilled") setAssignedManagers(assignedRes.value.items || []);
-      if (unassignedRes.status === "fulfilled") setUnassignedManagers(unassignedRes.value.items || []);
+      if (assignedRes.status === "fulfilled") setAssignedManagers(assignedRes.value || []);
+      if (unassignedRes.status === "fulfilled") setUnassignedManagers(unassignedRes.value || []);
     } catch (err) {
       if (err.status === 404) setNotFound(true);
       else toastRef.current.error(err.message || "Không tải được dữ liệu chi nhánh.");
@@ -97,7 +100,7 @@ export default function BranchDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy chi nhánh" screenCode="SCR-13" codeLabel="Chi nhánh" backTo="/chain/branches">
+      <TaskLayout title="Không tìm thấy chi nhánh" codeLabel="Chi nhánh" backTo="/chain/branches">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Chi nhánh không tồn tại. Quay lại danh sách.</span>
@@ -111,7 +114,6 @@ export default function BranchDetailPage() {
     <TaskLayout
       title={branch ? `Chi tiết chi nhánh · ${branch.code}` : "Chi tiết chi nhánh"}
       subtitle="Hồ sơ đầy đủ, gắn/đổi quản lý phụ trách và nhân viên tại chi nhánh."
-      screenCode="SCR-13"
       codeLabel="Chi nhánh"
       backTo="/chain/branches"
       meta={
@@ -188,7 +190,7 @@ export default function BranchDetailPage() {
             body={
               <>
                 Xoá mềm chi nhánh <strong>{branch.name}</strong> ({branch.code})? Chi nhánh chuyển sang
-                trạng thái Ngừng hoạt động và tự gỡ quản lý phụ trách. Backend sẽ từ chối nếu chi nhánh còn
+                trạng thái Ngừng hoạt động và tự gỡ quản lý phụ trách. Hệ thống sẽ từ chối nếu chi nhánh còn
                 nhân viên đang hoạt động.
               </>
             }

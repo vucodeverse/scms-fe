@@ -110,7 +110,9 @@ export default function App() {
                 pattern: "/chain/overview",
                 render: () => (
                   <RequireAuth>
-                    <RoleHomePage title="Tổng quan chuỗi" screenCode="SCR-10" />
+                    <RequireRole roles={["COO"]}>
+                      <RoleHomePage title="Tổng quan chuỗi" />
+                    </RequireRole>
                   </RequireAuth>
                 ),
               },

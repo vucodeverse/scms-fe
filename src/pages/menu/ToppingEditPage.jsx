@@ -90,7 +90,7 @@ export default function ToppingEditPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy topping" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
+      <TaskLayout title="Không tìm thấy topping" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Topping không tồn tại. Quay lại Menu & BOM.</span>
@@ -104,7 +104,6 @@ export default function ToppingEditPage() {
     <TaskLayout
       title={isEdit ? `Sửa topping · ${name}` : "Thêm topping"}
       subtitle="Tên và giá mặc định của topping dùng chung toàn chuỗi."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo={isEdit ? `/chain/menu/topping-detail?id=${editingId}` : "/chain/menu?tab=toppings"}
       meta={

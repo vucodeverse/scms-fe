@@ -143,7 +143,6 @@ export default function ManagersPage() {
     >
       <PageHeader
         title="Tài khoản quản lý"
-        screenCode="SCR-13 · QL"
         description="Tạo sẵn tài khoản Quản lý chi nhánh và quản lý danh sách tài khoản chờ gắn hoặc đang phụ trách chi nhánh."
         actions={<Button variant="outline-secondary" onClick={() => navigate("/chain/branches")}>Quản lý chi nhánh</Button>}
       />

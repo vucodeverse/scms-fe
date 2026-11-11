@@ -2,6 +2,57 @@ import { toIsoDate } from "../reports/reportKit.js";
 
 export const SHIFT_TYPES = ["MORNING", "EVENING", "NIGHT"];
 
+export const OPEN_SHIFT_EARLY_MINUTES = 60;
+export const PAST_SHIFT_EXPIRE_MINUTES = 30;
+
+export function getScheduledOpenability(shift, nowMs = Date.now()) {
+  if (!shift) {
+    return { openable: false, reason: "MISSING", label: "Không khả dụng", message: "" };
+  }
+  if (shift.status && shift.status !== "SCHEDULED") {
+    return { openable: false, reason: "NOT_SCHEDULED", label: "Không khả dụng", message: "" };
+  }
+
+  const today = todayIso();
+  const startMs = shift.plannedStart ? new Date(shift.plannedStart).getTime() : NaN;
+  const endMs = shift.plannedEnd ? new Date(shift.plannedEnd).getTime() : NaN;
+
+  if (!Number.isNaN(startMs)) {
+    const earliestMs = startMs - OPEN_SHIFT_EARLY_MINUTES * 60 * 1000;
+    if (nowMs < earliestMs) {
+      return {
+        openable: false,
+        reason: "TOO_EARLY",
+        label: "Chưa đến giờ",
+        message: `Chưa đến ca — chỉ được kiểm két mở ca trước giờ bắt đầu tối đa ${OPEN_SHIFT_EARLY_MINUTES} phút.`,
+      };
+    }
+  } else if (shift.shiftDate && shift.shiftDate > today) {
+    return {
+      openable: false,
+      reason: "TOO_EARLY",
+      label: "Chưa đến ngày",
+      message: "Chưa đến ngày làm việc — không thể kiểm két mở trước ca.",
+    };
+  }
+
+  if (shift.shiftDate && shift.shiftDate < today) {
+    const latestMs = Number.isNaN(endMs)
+      ? NaN
+      : endMs + PAST_SHIFT_EXPIRE_MINUTES * 60 * 1000;
+    if (Number.isNaN(latestMs) || nowMs > latestMs) {
+      return {
+        openable: false,
+        reason: "EXPIRED",
+        label: "Đã qua hạn",
+        message: "Lịch ca ngày đã qua đã hết giờ hoạt động, không thể mở ca.",
+      };
+    }
+  }
+
+  return { openable: true, reason: null, label: "", message: "" };
+}
+
 export const SHIFT_TYPE_META = {
   MORNING: { label: "Ca sáng", start: "07:00", end: "12:30", window: "07:00 – 12:30" },
   EVENING: { label: "Ca chiều", start: "12:30", end: "18:00", window: "12:30 – 18:00" },
@@ -26,6 +77,11 @@ export const HANDOVER_STATUS_META = {
   PENDING_RECEIVE: { label: "Chờ nhận két", variant: "warn" },
   COMPLETED: { label: "Đã bàn giao", variant: "success" },
   CANCELLED: { label: "Đã hủy", variant: "neutral" },
+};
+
+export const HANDOVER_TYPE_META = {
+  MID_SHIFT: { label: "Đổi người giữ ca", variant: "neutral" },
+  MANAGER_CLOSE: { label: "Cuối ca → Quản lý", variant: "dark" },
 };
 
 const WEEKDAY_SHORT = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
@@ -99,25 +155,37 @@ export function toTimeInput(isoValue) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// Quy đổi ngày + giờ ("HH:mm") sang Instant ISO string cho backend.
-// Nếu giờ kết thúc nhỏ hơn giờ bắt đầu (ca đêm 22:00 -> 06:00), tự cộng thêm 1 ngày.
+// Quy đổi ngày + giờ ("HH:mm") sang Instant ISO string cho backend (trong cùng ngày làm việc).
 export function buildShiftInstants(shiftDate, startTime, endTime) {
   if (!shiftDate || !startTime || !endTime) {
-    return { plannedStart: null, plannedEnd: null, overnight: false };
+    return { plannedStart: null, plannedEnd: null, endDate: shiftDate || null, invalidOrder: false };
   }
-  const overnight = endTime < startTime;
-  const endDate = overnight ? addDaysIso(shiftDate, 1) : shiftDate;
+  const invalidOrder = endTime <= startTime;
   const start = new Date(`${shiftDate}T${startTime}:00`);
-  const end = new Date(`${endDate}T${endTime}:00`);
+  const end = new Date(`${shiftDate}T${endTime}:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return { plannedStart: null, plannedEnd: null, overnight };
+    return { plannedStart: null, plannedEnd: null, endDate: shiftDate, invalidOrder };
   }
   return {
     plannedStart: start.toISOString(),
     plannedEnd: end.toISOString(),
-    endDate,
-    overnight,
+    endDate: shiftDate,
+    invalidOrder,
   };
+}
+
+export function validateShiftWindow(shiftType, startTime, endTime) {
+  if (!startTime || !endTime) {
+    return "Vui lòng chọn đầy đủ giờ bắt đầu và kết thúc.";
+  }
+  if (endTime <= startTime) {
+    return "Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày (không qua ngày hôm sau).";
+  }
+  const meta = SHIFT_TYPE_META[shiftType];
+  if (meta && (startTime < meta.start || endTime > meta.end)) {
+    return `${meta.label} chỉ cho phép tạo trong khoảng ${meta.start} – ${meta.end} trong cùng ngày.`;
+  }
+  return null;
 }
 
 export function actorName(id, employeeMap, fallbackPrefix = "NV") {
@@ -162,10 +230,22 @@ export function hasShiftTimeOverlap(startA, endA, startB, endB) {
   return s1 < e2 && e1 > s2;
 }
 
-export function isShiftPresetMismatch(shift) {
+export function isShiftOutsideTypeWindow(shift) {
   const meta = SHIFT_TYPE_META[shift?.shiftType];
   if (!meta || !shift?.plannedStart || !shift?.plannedEnd) return false;
-  return formatHm(shift.plannedStart) !== meta.start || formatHm(shift.plannedEnd) !== meta.end;
+  const startDt = new Date(shift.plannedStart);
+  const endDt = new Date(shift.plannedEnd);
+  if (Number.isNaN(startDt.getTime()) || Number.isNaN(endDt.getTime())) return false;
+  if (shift.shiftDate && (toIsoDate(startDt) !== shift.shiftDate || toIsoDate(endDt) !== shift.shiftDate)) {
+    return true;
+  }
+  const startHm = formatHm(startDt);
+  const endHm = formatHm(endDt);
+  return endHm <= startHm || startHm < meta.start || endHm > meta.end;
+}
+
+export function isShiftPresetMismatch(shift) {
+  return isShiftOutsideTypeWindow(shift);
 }
 
 export function analyzeScheduleConflicts(schedules = []) {
@@ -177,7 +257,7 @@ export function analyzeScheduleConflicts(schedules = []) {
   const activeBySlot = {};
   for (const s of schedules) {
     if (s.status !== "CLOSED") {
-      if (isShiftPresetMismatch(s)) {
+      if (isShiftOutsideTypeWindow(s)) {
         mismatchIds.add(s.shiftId);
       }
       const key = `${s.shiftDate}|${s.shiftType}`;

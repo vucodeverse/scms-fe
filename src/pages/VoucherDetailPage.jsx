@@ -88,7 +88,6 @@ export default function VoucherDetailPage() {
     return (
       <TaskLayout
         title="Không tìm thấy voucher"
-        screenCode="SCR-12"
         codeLabel="Khuyến mãi & Voucher"
         backTo="/chain/vouchers"
       >
@@ -109,7 +108,6 @@ export default function VoucherDetailPage() {
     <TaskLayout
       title={voucher ? `Chi tiết voucher · ${voucher.code}` : "Chi tiết voucher"}
       subtitle="Điều kiện áp dụng, thời gian hiệu lực và phạm vi áp dụng."
-      screenCode="SCR-12"
       codeLabel="Khuyến mãi & Voucher"
       backTo="/chain/vouchers"
       meta={
@@ -223,7 +221,7 @@ export default function VoucherDetailPage() {
               ) : (
                 <>
                   Xóa hẳn voucher <strong>{voucher.code}</strong>? Thao tác không thể hoàn tác. Voucher đã
-                  có lượt dùng sẽ bị backend từ chối xóa.
+                  có lượt dùng sẽ không thể xóa.
                 </>
               )
             }

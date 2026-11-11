@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, Modal, Spinner } from "react-bootstrap";
 import FormField from "../FormField.jsx";
 import StatusTag from "../StatusTag.jsx";
@@ -15,7 +15,51 @@ import {
   hasShiftTimeOverlap,
   toTimeInput,
   todayIso,
+  validateShiftWindow,
 } from "./shiftUtils.js";
+
+const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES_60 = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+function Time24Select({ id, value, disabled = false, isInvalid = false, ariaPrefix, onChange }) {
+  const [rawHour = "00", rawMin = "00"] = String(value || "00:00").split(":");
+  const hour = HOURS_24.includes(rawHour) ? rawHour : "00";
+  const minute = MINUTES_60.includes(rawMin) ? rawMin : "00";
+  return (
+    <div className="d-flex align-items-center gap-2">
+      <Form.Select
+        id={id}
+        value={hour}
+        disabled={disabled}
+        isInvalid={isInvalid}
+        aria-label={`Giờ ${ariaPrefix} (định dạng 24 giờ)`}
+        style={{ flex: "1 1 0", minWidth: 92, fontVariantNumeric: "tabular-nums" }}
+        onChange={(e) => onChange(`${e.target.value}:${minute}`)}
+      >
+        {HOURS_24.map((h) => (
+          <option key={h} value={h}>
+            {h} giờ
+          </option>
+        ))}
+      </Form.Select>
+      <span className="fw-bold text-muted-scms" aria-hidden="true">:</span>
+      <Form.Select
+        value={minute}
+        disabled={disabled}
+        isInvalid={isInvalid}
+        aria-label={`Phút ${ariaPrefix}`}
+        style={{ flex: "1 1 0", minWidth: 92, fontVariantNumeric: "tabular-nums" }}
+        onChange={(e) => onChange(`${hour}:${e.target.value}`)}
+      >
+        {MINUTES_60.map((m) => (
+          <option key={m} value={m}>
+            {m} phút
+          </option>
+        ))}
+      </Form.Select>
+    </div>
+  );
+}
 
 const ROLE_FILTERS = [
   { value: "", label: "Tất cả" },
@@ -38,9 +82,16 @@ export default function ShiftScheduleModal({
   onSuccess,
 }) {
   const toast = useToast();
+  const today = todayIso();
   const isEdit = mode === "edit" && Boolean(initialShift?.shiftId);
   const isOpenShift = isEdit && initialShift?.status === "OPEN";
-  const isToday = initialShift?.shiftDate === todayIso();
+  const isLockedPastSchedule = Boolean(
+    isEdit &&
+      initialShift?.status === "SCHEDULED" &&
+      initialShift?.shiftDate &&
+      initialShift.shiftDate < today,
+  );
+  const isToday = initialShift?.shiftDate === today;
 
   const [shiftDate, setShiftDate] = useState(todayIso());
   const [shiftType, setShiftType] = useState("MORNING");
@@ -55,6 +106,7 @@ export default function ShiftScheduleModal({
   const [fieldErrors, setFieldErrors] = useState({});
   const [apiError, setApiError] = useState("");
   const [busy, setBusy] = useState(false);
+  const topNoticeRef = useRef(null);
 
   useEffect(() => {
     if (!show) return;
@@ -103,14 +155,21 @@ export default function ShiftScheduleModal({
     return {
       plannedStart: keepStart ? initialShift.plannedStart : built.plannedStart,
       plannedEnd: keepEnd ? initialShift.plannedEnd : built.plannedEnd,
-      overnight: built.overnight,
+      keepOriginalOpenTimes: isOpenShift && keepStart && keepEnd,
       endDate: built.endDate,
     };
-  }, [shiftDate, startTime, endTime, isEdit, initialShift]);
+  }, [shiftDate, startTime, endTime, isEdit, initialShift, isOpenShift]);
 
   const currentTypeMeta = SHIFT_TYPE_META[shiftType] || SHIFT_TYPE_META.MORNING;
   const matchesPreset =
     startTime === currentTypeMeta.start && endTime === currentTypeMeta.end;
+  const liveTimeError = useMemo(() => {
+    if (effectiveTiming.keepOriginalOpenTimes) {
+      return null;
+    }
+    return validateShiftWindow(shiftType, startTime, endTime);
+  }, [effectiveTiming.keepOriginalOpenTimes, shiftType, startTime, endTime]);
+  const displayedTimeError = fieldErrors.time || liveTimeError;
 
   const duplicateSlotShift = useMemo(() => {
     if (!shiftDate || !shiftType) return null;
@@ -159,16 +218,37 @@ export default function ShiftScheduleModal({
     [selectedIds, employees, employeeConflictMap],
   );
 
+  const selectedManagers = useMemo(
+    () =>
+      selectedIds
+        .map((id) => employees.find((e) => e.id === id))
+        .filter((emp) => emp && emp.roleCode === "BRANCH_MANAGER")
+        .map((emp) => {
+          const roleInShift =
+            employeeRoles[emp.id] ?? employeeRoles[String(emp.id)] ?? emp.roleCode;
+          return {
+            emp,
+            roleInShift,
+            isOverridden: Boolean(roleInShift && roleInShift !== "BRANCH_MANAGER"),
+          };
+        }),
+    [selectedIds, employees, employeeRoles],
+  );
+
   function handleShiftTypeChange(nextType) {
     const prevMeta = SHIFT_TYPE_META[shiftType];
     const matchesPrevPreset =
       prevMeta && startTime === prevMeta.start && endTime === prevMeta.end;
+    const invalidForNextType = Boolean(validateShiftWindow(nextType, startTime, endTime));
     setShiftType(nextType);
-    if (!isOpenShift && ((!isEdit && !customTimes) || matchesPrevPreset)) {
+    setApiError("");
+    setFieldErrors((f) => ({ ...f, time: null }));
+    if (!isOpenShift && ((!isEdit && !customTimes) || matchesPrevPreset || invalidForNextType)) {
       const meta = SHIFT_TYPE_META[nextType];
       if (meta) {
         setStartTime(meta.start);
         setEndTime(meta.end);
+        setCustomTimes(false);
       }
     }
   }
@@ -194,31 +274,39 @@ export default function ShiftScheduleModal({
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!branchId || busy) return;
+    if (!branchId || busy || isLockedPastSchedule) return;
 
     const errs = {};
-    if (!shiftDate) errs.shiftDate = "Vui lòng chọn ngày làm việc.";
-    if (!startTime || !endTime) errs.time = "Vui lòng nhập đầy đủ giờ bắt đầu và kết thúc.";
-    else if (startTime === endTime) errs.time = "Giờ kết thúc phải khác giờ bắt đầu.";
+    if (!shiftDate) {
+      errs.shiftDate = "Vui lòng chọn ngày làm việc.";
+    } else if (!isOpenShift && shiftDate < today) {
+      errs.shiftDate = "Không thể tạo hoặc gán lịch cho ngày đã qua.";
+    }
 
     const plannedStart = effectiveTiming.plannedStart;
     const plannedEnd = effectiveTiming.plannedEnd;
-    if (!plannedStart || !plannedEnd || new Date(plannedStart) >= new Date(plannedEnd)) {
-      errs.time = "Khung giờ ca không hợp lệ.";
+    if (effectiveTiming.keepOriginalOpenTimes) {
+      if (!plannedStart || !plannedEnd || new Date(plannedStart) >= new Date(plannedEnd)) {
+        errs.time = "Khung giờ ca không hợp lệ.";
+      }
+    } else {
+      const windowErr = validateShiftWindow(shiftType, startTime, endTime);
+      if (windowErr) {
+        errs.time = windowErr;
+      } else if (!plannedStart || !plannedEnd || new Date(plannedStart) >= new Date(plannedEnd)) {
+        errs.time = "Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.";
+      }
     }
 
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
+      setApiError("");
       return;
     }
 
     if (duplicateSlotShift) {
-      const dupMeta = SHIFT_TYPE_META[duplicateSlotShift.shiftType] || currentTypeMeta;
-      setApiError(
-        `Ngày ${formatDate(shiftDate)} đã có ${dupMeta.label} #${duplicateSlotShift.shiftId} đang ${
-          duplicateSlotShift.status === "OPEN" ? "mở" : "lên lịch"
-        }. Vui lòng chỉnh sửa ca hiện có thay vì tạo trùng ca.`,
-      );
+      setApiError("");
+      topNoticeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;
     }
 
@@ -264,7 +352,7 @@ export default function ShiftScheduleModal({
       if (err.fieldError?.("assignedEmployeeIds")) nextFields.assignedEmployeeIds = err.fieldError("assignedEmployeeIds");
       if (err.detailCode === "INVALID_SHIFT_TIME") nextFields.time = err.message;
       setFieldErrors(nextFields);
-      setApiError(err.message || "Không lưu được lịch ca làm việc.");
+      setApiError(Object.keys(nextFields).length > 0 ? "" : err.message || "Không lưu được lịch ca làm việc.");
     } finally {
       setBusy(false);
     }
@@ -284,7 +372,14 @@ export default function ShiftScheduleModal({
       </Modal.Header>
       <Form noValidate onSubmit={handleSubmit}>
         <Modal.Body>
-          {isOpenShift ? (
+          {isLockedPastSchedule ? (
+            <div className="notice notice--warn mb-3">
+              <strong>!</strong>
+              <span>
+                Ngày <strong>{formatDate(initialShift?.shiftDate)}</strong> đã qua — hệ thống khóa chỉnh sửa và không cho phép gán nhân viên vào lịch ca quá khứ.
+              </span>
+            </div>
+          ) : isOpenShift ? (
             <div className="notice notice--warn mb-3">
               <strong>!</strong>
               <span>
@@ -294,7 +389,7 @@ export default function ShiftScheduleModal({
           ) : null}
 
           {duplicateSlotShift ? (
-            <div className="notice notice--warn mb-3">
+            <div ref={topNoticeRef} className="notice notice--warn mb-3">
               <strong>!</strong>
               <span>
                 Ngày <strong>{formatDate(shiftDate)}</strong> đã có{" "}
@@ -309,8 +404,8 @@ export default function ShiftScheduleModal({
             </div>
           ) : null}
 
-          {apiError ? (
-            <div className="notice notice--warn mb-3">
+          {!duplicateSlotShift && apiError ? (
+            <div ref={topNoticeRef} className="notice notice--warn mb-3">
               <strong>!</strong>
               <span>{apiError}</span>
             </div>
@@ -320,10 +415,12 @@ export default function ShiftScheduleModal({
             <FormField label="Ngày làm việc" required error={fieldErrors.shiftDate}>
               <Form.Control
                 type="date"
+                min={isOpenShift || isLockedPastSchedule ? undefined : today}
                 value={shiftDate}
-                disabled={busy || isOpenShift}
+                disabled={busy || isOpenShift || isLockedPastSchedule}
                 onChange={(e) => {
                   setShiftDate(e.target.value);
+                  setApiError("");
                   setFieldErrors((f) => ({ ...f, shiftDate: null }));
                 }}
               />
@@ -332,7 +429,7 @@ export default function ShiftScheduleModal({
             <FormField label="Loại ca làm việc" required>
               <Form.Select
                 value={shiftType}
-                disabled={busy || isOpenShift}
+                disabled={busy || isOpenShift || isLockedPastSchedule}
                 onChange={(e) => handleShiftTypeChange(e.target.value)}
               >
                 {SHIFT_TYPES.map((t) => (
@@ -343,35 +440,37 @@ export default function ShiftScheduleModal({
               </Form.Select>
             </FormField>
 
-            <FormField label="Giờ bắt đầu" required error={fieldErrors.time}>
-              <Form.Control
-                type="time"
+            <FormField label="Giờ bắt đầu (24h)" required error={displayedTimeError}>
+              <Time24Select
+                id="shift-start-time"
                 value={startTime}
-                disabled={busy}
-                onChange={(e) => {
-                  setStartTime(e.target.value);
+                disabled={busy || isLockedPastSchedule}
+                isInvalid={Boolean(displayedTimeError)}
+                ariaPrefix="bắt đầu"
+                onChange={(nextVal) => {
+                  setStartTime(nextVal);
                   setCustomTimes(true);
+                  setApiError("");
                   setFieldErrors((f) => ({ ...f, time: null }));
                 }}
               />
             </FormField>
 
             <FormField
-              label="Giờ kết thúc"
+              label="Giờ kết thúc (24h)"
               required
-              help={
-                effectiveTiming.overnight
-                  ? `Qua ngày hôm sau (kết thúc lúc ${endTime} ngày ${formatDate(effectiveTiming.endDate)})`
-                  : "Trong cùng ngày làm việc"
-              }
+              help={`Trong cùng ngày · Phạm vi ${currentTypeMeta.label}: ${currentTypeMeta.window}`}
             >
-              <Form.Control
-                type="time"
+              <Time24Select
+                id="shift-end-time"
                 value={endTime}
-                disabled={busy}
-                onChange={(e) => {
-                  setEndTime(e.target.value);
+                disabled={busy || isLockedPastSchedule}
+                isInvalid={Boolean(displayedTimeError)}
+                ariaPrefix="kết thúc"
+                onChange={(nextVal) => {
+                  setEndTime(nextVal);
                   setCustomTimes(true);
+                  setApiError("");
                   setFieldErrors((f) => ({ ...f, time: null }));
                 }}
               />
@@ -379,17 +478,25 @@ export default function ShiftScheduleModal({
           </div>
 
           {!matchesPreset ? (
-            <div className="notice notice--warn mb-3 justify-content-between align-items-center flex-wrap">
+            <div className="notice mb-3 justify-content-between align-items-center flex-wrap">
               <span>
-                <strong>Lệch khung chuẩn:</strong> Khung đang chọn ({startTime || "—"}–{endTime || "—"}) khác giờ
-                chuẩn của <strong>{currentTypeMeta.label}</strong> ({currentTypeMeta.window}), có thể gây trùng lịch với
-                ca kế tiếp.
+                {liveTimeError ? (
+                  <>
+                    <strong>Phạm vi hợp lệ của {currentTypeMeta.label}:</strong> {currentTypeMeta.window} trong cùng
+                    ngày. Bấm nút bên phải để đặt lại nhanh.
+                  </>
+                ) : (
+                  <>
+                    <strong>Khung rút gọn hợp lệ:</strong> {startTime}–{endTime} (trong phạm vi{" "}
+                    <strong>{currentTypeMeta.label}</strong> {currentTypeMeta.window}).
+                  </>
+                )}
               </span>
               <Button
                 type="button"
                 size="sm"
                 variant="outline-secondary"
-                disabled={busy}
+                disabled={busy || isLockedPastSchedule}
                 onClick={() => {
                   setStartTime(currentTypeMeta.start);
                   setEndTime(currentTypeMeta.end);
@@ -411,14 +518,14 @@ export default function ShiftScheduleModal({
                 Nhân viên được gán vào ca ({selectedIds.length}/{activeEmployees.length})
               </div>
               <div className="small text-muted-scms">
-                Hệ thống tự kiểm tra trùng khung giờ (BR-15) và cho phép chọn vai trò kiêm nhiệm riêng trong ca mà không đổi chức danh gốc sau hết ca.
+                Hệ thống tự kiểm tra trùng khung giờ và cho phép chọn vai trò kiêm nhiệm riêng trong ca mà không đổi chức danh gốc sau hết ca.
               </div>
             </div>
             <div className="d-flex gap-1">
-              <Button type="button" size="sm" variant="outline-secondary" onClick={selectAllFiltered} disabled={busy || filteredEmployees.length === 0}>
+              <Button type="button" size="sm" variant="outline-secondary" onClick={selectAllFiltered} disabled={busy || isLockedPastSchedule || filteredEmployees.length === 0}>
                 Chọn danh sách lọc
               </Button>
-              <Button type="button" size="sm" variant="outline-secondary" onClick={clearAllSelected} disabled={busy || selectedIds.length === 0}>
+              <Button type="button" size="sm" variant="outline-secondary" onClick={clearAllSelected} disabled={busy || isLockedPastSchedule || selectedIds.length === 0}>
                 Bỏ chọn hết
               </Button>
             </div>
@@ -456,7 +563,7 @@ export default function ShiftScheduleModal({
             <div className="notice notice--warn mb-2">
               <strong>!</strong>
               <span>
-                Nhân viên đang chọn bị trùng giờ với ca khác (BR-15):{" "}
+                Nhân viên đang chọn bị trùng giờ với ca khác:{" "}
                 {selectedConflicts
                   .map(
                     ({ emp, shift }) =>
@@ -466,6 +573,23 @@ export default function ShiftScheduleModal({
                   )
                   .join(", ")}
                 . Hãy bỏ chọn hoặc chỉnh lại khung giờ của ca bị lệch chuẩn.
+              </span>
+            </div>
+          ) : null}
+
+          {selectedManagers.length > 0 ? (
+            <div className="notice notice--warn mb-2">
+              <strong>!</strong>
+              <span>
+                <strong>Lưu ý gán Quản lý chi nhánh:</strong>{" "}
+                {selectedManagers
+                  .map(({ emp, roleInShift, isOverridden }) =>
+                    isOverridden
+                      ? `${emp.fullName} đang được chọn kiêm ${POSITION_LABELS[roleInShift] || roleInShift}`
+                      : `${emp.fullName} (${POSITION_LABELS[emp.roleCode] || "Quản lý chi nhánh"}) đang được gán trực tiếp vào ca`,
+                  )
+                  .join("; ")}
+                . Hãy kiểm tra lại để tránh lỡ tay thêm Quản lý khi dùng nút chọn nhanh hoặc khi không cần kiêm vị trí nhân viên.
               </span>
             </div>
           ) : null}
@@ -490,15 +614,19 @@ export default function ShiftScheduleModal({
             ) : (
               filteredEmployees.map((emp, idx) => {
                 const checked = selectedIds.includes(emp.id);
-                const checkedIn = (isToday || shiftDate === todayIso()) && (checkedInIds.has(emp.id) || emp.isCheckedIn);
+                const checkedIn = (isToday || shiftDate === today) && (checkedInIds.has(emp.id) || emp.isCheckedIn);
                 const conflictShift = employeeConflictMap[emp.id];
                 const currentRoleInShift =
                   employeeRoles[emp.id] ?? employeeRoles[String(emp.id)] ?? emp.roleCode ?? "";
                 const canCustomizeRole = checked && emp.roleCode !== "COO";
+                const isManagerAssigned = checked && emp.roleCode === "BRANCH_MANAGER";
+                const isManagerOverridden =
+                  isManagerAssigned &&
+                  Boolean(currentRoleInShift && currentRoleInShift !== "BRANCH_MANAGER");
                 return (
                   <div
                     key={emp.id}
-                    className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 m-0"
+                    className="d-flex align-items-start align-items-sm-center justify-content-between flex-wrap gap-2 px-3 py-2 m-0"
                     style={{
                       background: checked ? "var(--accent-soft)" : "var(--surface)",
                       borderTop: idx === 0 ? "none" : "1px solid var(--line)",
@@ -507,13 +635,13 @@ export default function ShiftScheduleModal({
                     <label
                       htmlFor={`shift-emp-${emp.id}`}
                       className="d-flex align-items-center gap-2 mb-0 flex-grow-1"
-                      style={{ cursor: busy ? "default" : "pointer" }}
+                      style={{ cursor: busy || isLockedPastSchedule ? "default" : "pointer", minWidth: 210 }}
                     >
                       <Form.Check
                         id={`shift-emp-${emp.id}`}
                         type="checkbox"
                         checked={checked}
-                        disabled={busy}
+                        disabled={busy || isLockedPastSchedule}
                         onChange={() => toggleEmployee(emp.id)}
                       />
                       <div>
@@ -532,9 +660,9 @@ export default function ShiftScheduleModal({
                         <Form.Select
                           size="sm"
                           value={currentRoleInShift}
-                          disabled={busy}
+                          disabled={busy || isLockedPastSchedule}
                           aria-label={`Vai trò trong ca cho ${emp.fullName}`}
-                          style={{ width: "auto", minWidth: 165, fontSize: 12 }}
+                          style={{ width: "auto", minWidth: 235, maxWidth: "100%", fontSize: 12 }}
                           onChange={(e) => {
                             const nextRole = e.target.value;
                             setEmployeeRoles((prev) => {
@@ -563,6 +691,17 @@ export default function ShiftScheduleModal({
                           ) : null}
                         </Form.Select>
                       ) : null}
+                      {isManagerAssigned ? (
+                        <StatusTag
+                          status="MANAGER_WARN"
+                          variant="warn"
+                          label={
+                            isManagerOverridden
+                              ? `Cảnh báo: Quản lý kiêm ${POSITION_LABELS[currentRoleInShift] || currentRoleInShift}`
+                              : "Cảnh báo: Quản lý chi nhánh"
+                          }
+                        />
+                      ) : null}
                       {conflictShift ? (
                         <StatusTag
                           status="CONFLICT"
@@ -589,7 +728,7 @@ export default function ShiftScheduleModal({
           <Button type="button" variant="outline-secondary" onClick={onClose} disabled={busy}>
             Hủy
           </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={busy || isLockedPastSchedule}>
             {busy ? <Spinner size="sm" className="me-2" /> : null}
             {isEdit ? "Lưu thay đổi ca" : "Tạo ca & gán nhân viên"}
           </Button>

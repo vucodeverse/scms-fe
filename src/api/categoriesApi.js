@@ -1,5 +1,5 @@
 import { http } from "./client.js";
-import { buildListParams, normalizePage } from "./paging.js";
+import { buildListParams, fetchAllPages, normalizePage } from "./paging.js";
 
 // API danh mục menu (UC09) — /api/v1/menu-categories.
 // Danh mục hệ thống UNCAT không xuất hiện trong danh sách quản lý.
@@ -15,12 +15,9 @@ export const categoriesApi = {
     const page = await http.get("/menu-categories", { params });
     return normalizePage(page);
   },
-  // Toàn bộ danh mục (tối đa 100) — dùng khi tính lại thứ tự hiển thị.
+  // Toàn bộ danh mục — tự gom qua tất cả trang nếu vượt 100 bản ghi.
   async listAll() {
-    const page = await http.get("/menu-categories", {
-      params: buildListParams({ uiPage: 1, size: 100, sortBy: "sortOrder", sortDir: "ASC" }),
-    });
-    return normalizePage(page).items;
+    return fetchAllPages((p) => categoriesApi.list(p));
   },
   // LƯU Ý: DTO chi tiết của backend (CategoryDetailDto) chỉ có
   // { id, code, name, description, sortOrder, systemCategory,

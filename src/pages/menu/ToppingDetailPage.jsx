@@ -7,6 +7,7 @@ import { useToast } from "../../components/ToastContext.jsx";
 import { useRouter } from "../../router/HashRouter.jsx";
 import { toppingsApi } from "../../api/toppingsApi.js";
 import { productsApi } from "../../api/productsApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 import { formatVnd } from "../../lib/format.js";
 
 const STATUS_LABELS = { ACTIVE: "Đang hoạt động", INACTIVE: "Ngừng hoạt động" };
@@ -47,9 +48,9 @@ export default function ToppingDetailPage() {
     }
     setLoading(true);
     try {
-      const [all, productsPage] = await Promise.all([
+      const [all, allProducts] = await Promise.all([
         toppingsApi.list(),
-        productsApi.list({ uiPage: 1, size: 100 }),
+        fetchAllPages((p) => productsApi.list(p)),
       ]);
       const row = (all || []).find((t) => t.id === toppingId);
       if (!row) {
@@ -58,7 +59,7 @@ export default function ToppingDetailPage() {
       }
       setTopping(row);
       const uses = [];
-      for (const p of productsPage.items || []) {
+      for (const p of allProducts || []) {
         const link = (p.toppings || []).find((t) => t.toppingId === toppingId);
         if (link) uses.push({ product: p, extraPrice: link.extraPrice, isDefault: link.isDefault });
       }
@@ -107,7 +108,7 @@ export default function ToppingDetailPage() {
 
   if (notFound) {
     return (
-      <TaskLayout title="Không tìm thấy topping" screenCode="TAB-05" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
+      <TaskLayout title="Không tìm thấy topping" codeLabel="Menu & BOM" backTo="/chain/menu?tab=toppings">
         <div className="scms-panel panel-pad">
           <div className="empty-state">
             <span>Topping không tồn tại. Quay lại Menu & BOM.</span>
@@ -121,7 +122,6 @@ export default function ToppingDetailPage() {
     <TaskLayout
       title={topping ? `Chi tiết topping · ${topping.name}` : "Chi tiết topping"}
       subtitle="Giá mặc định và các sản phẩm đang áp dụng topping."
-      screenCode="TAB-05"
       codeLabel="Menu & BOM"
       backTo="/chain/menu?tab=toppings"
       meta={

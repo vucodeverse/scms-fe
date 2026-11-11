@@ -14,8 +14,6 @@ import { formatDateTime, formatVnd } from "../../lib/format.js";
 // cùng một form). Danh sách không chứa nút thao tác (FE-13): bấm vào
 // tên món để mở trang chi tiết /chain/menu/detail?id=, nơi đặt Sửa,
 // Xoá mềm và Xóa hẳn.
-// Cố ý chưa có ô tìm kiếm theo tên: backend lỗi 500 khi nhận param
-// keyword ở GET /products; chỉ bật lại khi backend đã sửa.
 const STATUS_LABELS = { AVAILABLE: "Đang bán", UNAVAILABLE: "Tạm hết", INACTIVE: "Ngừng bán" };
 const STATUS_VARIANTS = { AVAILABLE: "dark", UNAVAILABLE: "warn", INACTIVE: "neutral" };
 const PAGE_SIZE = 10;
@@ -35,6 +33,7 @@ export default function ProductsTab() {
   const [categories, setCategories] = useState([]);
   const [page, setPage] = useState({ items: [], totalPages: 0, totalItems: 0 });
   const [uiPage, setUiPage] = useState(1);
+  const [keyword, setKeyword] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -52,6 +51,7 @@ export default function ProductsTab() {
       const result = await productsApi.list({
         uiPage,
         size: PAGE_SIZE,
+        keyword: keyword.trim() || undefined,
         categoryId: categoryFilter ? Number(categoryFilter) : undefined,
         status: statusFilter || undefined,
       });
@@ -61,7 +61,7 @@ export default function ProductsTab() {
     } finally {
       setLoading(false);
     }
-  }, [uiPage, categoryFilter, statusFilter, toast]);
+  }, [uiPage, keyword, categoryFilter, statusFilter, toast]);
 
   useEffect(() => {
     load();
@@ -110,6 +110,17 @@ export default function ProductsTab() {
         pagination={{ page: uiPage, totalPages: page.totalPages, onChange: setUiPage }}
         toolbar={
           <>
+            <Form.Control
+              type="search"
+              placeholder="Tìm tên món, danh mục…"
+              value={keyword}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setUiPage(1);
+              }}
+              style={{ maxWidth: 260 }}
+              aria-label="Tìm sản phẩm"
+            />
             <Form.Select
               value={categoryFilter}
               onChange={(e) => {

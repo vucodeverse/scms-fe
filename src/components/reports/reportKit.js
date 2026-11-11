@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { branchesApi } from "../../api/branchesApi.js";
+import { fetchAllPages } from "../../api/paging.js";
 
 // Tiện ích dùng chung cho các màn hình báo cáo (UC34–UC42).
 
@@ -80,9 +81,9 @@ export function useBranchOptions(user) {
   useEffect(() => {
     if (isBranchUser) return;
     let alive = true;
-    branchesApi
-      .list({ uiPage: 1, size: 100 })
-      .then((p) => alive && setBranches(p.items || []))
+    fetchAllPages((p) => branchesApi.list(p))
+      .then((items) => alive && setBranches(items))
+
       .catch(() => alive && setBranches([]));
     return () => {
       alive = false;
